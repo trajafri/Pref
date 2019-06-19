@@ -24,6 +24,9 @@ allTests =
       , (C "x" (NLiteral 2) empty, "(lambda (x) 2)")
       , (I 2, "((lambda (x) 2) 3)")
       , (I 2, "((lambda (x) 2) 3)")
+      , (I 5, "((lambda (x y z) z) 3 4 5)")
+      , (I 3, "(let ((x 1) (y 2) (z 3)) z)")
+      , (I 2, "((lambda () 2))")
       ]
   ]
 
