@@ -12,7 +12,7 @@ msg = " not tokenized correctly"
 allTests =
   [ TestCase $ assertEqual (show test ++ msg) ex (tokenize test)
   | (test, ex) <-
-      [ ("empty string", [])
+      [ ("", [])
       , ("(", [LParen])
       , (")", [RParen])
       , ("a", [ID "a"])

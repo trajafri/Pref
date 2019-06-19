@@ -6,17 +6,18 @@ data Exp
   = Id String
   | NLiteral Int
   | SLiteral String
-  | Lambda String
+  | Lambda [String]
            Exp
-  | Let (String, Exp)
+  | Let [(String, Exp)]
         Exp
   | App Exp
-        Exp
+        [Exp]
   deriving (Eq)
 
 instance Show Exp where
   show (Id v) = "Id " ++ v
-  show (Lambda v b) = "(Lambda (" ++ v ++ ") " ++ show b ++ ")"
-  show (Let (v, bi) b) =
-    "(Let ((" ++ v ++ " " ++ show bi ++ ")) " ++ show b ++ ")"
-  show (App tor nd) = "(App " ++ show tor ++ " " ++ show nd ++ ")"
+  show (Lambda vs b) = "(Lambda (" ++ unwords vs ++ ") " ++ show b ++ ")"
+  show (Let bindings b) =
+    "(Let ((" ++
+    unwords (map (\(v, b) -> v ++ (show b)) bindings) ++ ")) " ++ show b ++ ")"
+  show (App tor nds) = "(App " ++ show tor ++ " " ++ show nds ++ ")"

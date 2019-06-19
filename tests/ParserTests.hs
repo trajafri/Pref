@@ -30,6 +30,14 @@ t10 = "(let ((b b)) (a a)) (define a) (a a)"
 
 t11 = "(a b c d)"
 
+t12 = "(lambda (a b c d) e)"
+
+t13 = "(lambda () a)"
+
+t14 = "(lambda (()) a)"
+
+t15 = "(let ((a a) (b b) (c c) (d d)) e)"
+
 errorMsg = " parsed incorrectly"
 
 allTests =
@@ -81,6 +89,29 @@ allTests =
             , Node [Leaf "a", Leaf "a"]
             ])
       , (t11, Just [Node [Leaf "a", Leaf "b", Leaf "c", Leaf "d"]])
+      , ( t12
+        , Just
+            [ Node
+                [ Leaf "lambda"
+                , Node [Leaf "a", Leaf "b", Leaf "c", Leaf "d"]
+                , Leaf "e"
+                ]
+            ])
+      , (t13, Just [Node [Leaf "lambda", Node [], Leaf "a"]])
+      , (t14, Just [Node [Leaf "lambda", Node [Node []], Leaf "a"]])
+      , ( t15
+        , Just
+            [ Node
+                [ Leaf "let"
+                , Node
+                    [ Node [Leaf "a", Leaf "a"]
+                    , Node [Leaf "b", Leaf "b"]
+                    , Node [Leaf "c", Leaf "c"]
+                    , Node [Leaf "d", Leaf "d"]
+                    ]
+                , Leaf "e"
+                ]
+            ])
       ]
   ]
 
@@ -96,23 +127,52 @@ allExpTests =
   | (test, ex) <-
       [ (t1, [Just $ Id "a"])
       , (t2, [Nothing])
-      , (t3, [Nothing])
-      , (t4, [Just $ App (Id "a") (Id "a")])
-      , (t5, [Just $ Lambda "a" (Id "a")])
-      , (t6, [Just $ Lambda "a" (App (Id "a") (Id "a"))])
-      , (t7, [Nothing])
-      , (t8, [Nothing, Nothing])
+      , (t3, [Just $ App (Id "a") []])
+      , (t4, [Just $ App (Id "a") [Id "a"]])
+      , (t5, [Just $ Lambda ["a"] (Id "a")])
+      , (t6, [Just $ Lambda ["a"] (App (Id "a") [Id "a"])])
+      , ( t7
+        , [ Just $
+            App
+              (Id "let")
+              [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
+              , App (Id "a") [Id "a"]
+              ]
+          ])
+      , ( t8
+        , [ Just $
+            App
+              (Id "let")
+              [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
+              , App (Id "a") [Id "a"]
+              ]
+          , Just $ App (Id "a") []
+          ])
       , ( t9
-        , [ Nothing
-          , Just $ App (Id "define") (Id "a")
-          , Just $ App (Id "a") (Id "a")
+        , [ Just $
+            App
+              (Id "let")
+              [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
+              , App (Id "a") [Id "a"]
+              ]
+          , Just $ App (Id "define") [Id "a"]
+          , Just $ App (Id "a") [Id "a"]
           ])
       , ( t10
-        , [ Just $ Let ("b", Id "b") (App (Id "a") (Id "a"))
-          , Just $ App (Id "define") (Id "a")
-          , Just $ App (Id "a") (Id "a")
+        , [ Just $ Let [("b", Id "b")] (App (Id "a") [Id "a"])
+          , Just $ App (Id "define") [Id "a"]
+          , Just $ App (Id "a") [Id "a"]
           ])
-      , (t11, [Nothing])
+      , (t11, [Just $ App (Id "a") [Id "b", Id "c", Id "d"]])
+      , (t12, [Just $ Lambda ["a", "b", "c", "d"] $ Id "e"])
+      , (t13, [Just $ Lambda [] $ Id "a"])
+      , (t14, [Nothing])
+      , ( t15
+        , [ Just $
+            Let
+              [("a", Id "a"), ("b", Id "b"), ("c", Id "c"), ("d", Id "d")]
+              (Id "e")
+          ])
       ]
   ]
 

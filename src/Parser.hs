@@ -18,6 +18,14 @@ instance Show PTree where
   show (Leaf v) = v
   show (Node ls) = ('(' : (unwords . map show) ls) ++ ")"
 
+isLeaf :: PTree -> Bool
+isLeaf (Leaf _) = True
+isLeaf _ = False
+
+isPair :: PTree -> Bool
+isPair (Node [Leaf _, Leaf _]) = True
+isPair _ = False
+
 {-- Idea:
   To convert a series of Tokens to a Parse Tree, we will assume
   that a '(' indicates a list of sub parse tree, that is terminated by ')'.
@@ -55,15 +63,26 @@ treeToExp :: PTree -> Maybe Exp
 treeToExp (Leaf v) -- determine what kind of leaf it is
   | (head v == '"' && (head . reverse) v == '"') = Just $ SLiteral v
   | otherwise = Just $ maybe (Id v) NLiteral (readMaybe v)
-treeToExp (Node [Leaf "lambda", Node [Leaf v], body]) = do
+treeToExp (Node [Leaf "lambda", Node variables, body]) = do
   bodyExp <- treeToExp body
-  return $ Lambda v bodyExp
-treeToExp (Node [Leaf "let", Node [Node [Leaf v, binding]], body]) = do
-  bindingExp <- treeToExp binding
-  bodyExp <- treeToExp body
-  return $ Let (v, bindingExp) bodyExp
-treeToExp (Node [rator, rand]) = do
+  if (all isLeaf variables)
+    then return $ Lambda (map (\(Leaf v) -> v) variables) bodyExp
+    else (sequence (map treeToExp variables ++ [Just bodyExp])) >>=
+         (\exps -> return $ App (Id "lambda") exps)
+treeToExp (Node [Leaf "let", Node bindings, body]) =
+  treeToExp body >>=
+  (\bodyExp ->
+     if (all isPair bindings)
+       then do
+         bindingVars <- traverse treeToExp $ map (\(Node [v, _]) -> v) bindings
+         bindingVal <- traverse treeToExp $ map (\(Node [_, b]) -> b) bindings
+         return $
+           Let (zipWith (\(Id v) b -> (v, b)) bindingVars bindingVal) bodyExp
+       else do
+         bindingExps <- treeToExp $ Node bindings
+         return $ App (Id "let") $ [bindingExps] ++ [bodyExp])
+treeToExp (Node (rator:rands)) = do
   ratorExp <- treeToExp rator
-  randExp <- treeToExp rand
-  return $ App ratorExp randExp
+  randExps <- traverse treeToExp rands
+  return $ App ratorExp randExps
 treeToExp _ = Nothing
