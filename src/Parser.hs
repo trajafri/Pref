@@ -59,6 +59,8 @@ parseList els -- Case where we either have a '(' or an ID
   (allTrees, restTks) <- parseList rest
   return (expTree : allTrees, restTks)
 
+-- Currently, I don't like how I have to parse out let's, if's etc.
+-- Maybe there is a better way.
 treeToExp :: PTree -> Maybe Exp
 treeToExp (Leaf v) -- determine what kind of leaf it is
   | (head v == '"' && (head . reverse) v == '"') = Just $ SLiteral v
@@ -81,6 +83,14 @@ treeToExp (Node [Leaf "let", Node bindings, body]) =
        else do
          bindingExps <- treeToExp $ Node bindings
          return $ App (Id "let") $ [bindingExps] ++ [bodyExp])
+treeToExp (Node [Leaf "if", cond, thn, els]) = do
+  condExp <- treeToExp cond
+  thenExp <- treeToExp thn
+  elseExp <- treeToExp els
+  return $ If condExp thenExp elseExp
+treeToExp (Node [Leaf "define", Leaf id, binding]) = do
+  bindingExp <- treeToExp binding
+  return $ Def id bindingExp
 treeToExp (Node (rator:rands)) = do
   ratorExp <- treeToExp rator
   randExps <- traverse treeToExp rands
