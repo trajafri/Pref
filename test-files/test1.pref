@@ -1,0 +1,4 @@
+((lambda (f x) 
+   (if x (* x ((f f) (- x 1))) 1)) 
+ (lambda (f x) 
+   (if x (* x ((f f) (- x 1))) 1)) 5)

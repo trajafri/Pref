@@ -8,10 +8,15 @@ data Exp
   | SLiteral String
   | Lambda [String]
            Exp
+  | If Exp
+       Exp
+       Exp
   | Let [(String, Exp)]
         Exp
   | App Exp
         [Exp]
+  | Def String
+        Exp
   deriving (Eq)
 
 instance Show Exp where
