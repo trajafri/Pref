@@ -53,6 +53,7 @@ eval (App (Id "+") rands) = evaluateNumOperation (+) 0 rands
 eval (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
 eval (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
 eval (App (Id "/") rands) = evaluateNumOperation (div) 1 rands
+eval (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
 eval (App rator rands) =
   \env -> do
     eRator <- (eval rator env)
@@ -84,6 +85,23 @@ evaluateNumOperation op base rands env = do
              show rands)
       maybenums
   return $ I $ Prelude.foldr op base nums
+
+evaluateStrOperation ::
+     (String -> String -> String) -> String -> [Exp] -> Env -> Either Error Val
+evaluateStrOperation op base rands env = do
+  maybestrs <- mapM (`eval` env) rands
+  strs <-
+    mapM
+      (\x ->
+         case x of
+           (S i) -> return i
+           _ ->
+             Left $
+             EvalError $
+             " got a non string argument in the following operands:\n" ++
+             show rands)
+      maybestrs
+  return $ S $ Prelude.foldr op base strs
 
 evalList :: [Exp] -> Env -> Either Error [Val]
 evalList [] _ = return []

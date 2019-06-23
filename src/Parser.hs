@@ -67,7 +67,8 @@ parseList els -- Case where we either have a '(' or an ID
 -- Maybe there is a better way.
 treeToExp :: PTree -> Either Error Exp
 treeToExp (Leaf v) -- determine what kind of leaf it is
-  | (head v == '\"' && (head . reverse) v == '\"') = return $ SLiteral v
+  | (head v == '\"' && (head . reverse) v == '\"') =
+    return $ SLiteral (zipWith const (tail v) (tail . tail $ v))
   | otherwise = maybe (return $ Id v) (return . NLiteral) (readMaybe v)
 treeToExp (Node [Leaf "lambda", Node variables, body]) = do
   bodyExp <- treeToExp body
