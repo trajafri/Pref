@@ -12,15 +12,10 @@ import Test.HUnit
 errorMsg = " interpreted incorrectly"
 
 allTests =
-  [ TestCase $
-  assertEqual
-    (show test ++ errorMsg)
-    (Just e)
-    (maybe Nothing (`eval` empty) $
-     maybe Nothing treeToExp $ (head <$>) . parse . tokenize $ test)
+  [ TestCase $ assertEqual (show test ++ errorMsg) (return [e]) (codeToVal test)
   | (e, test) <-
       [ (I 1, "1")
-      --, (S "a", "\"a\"")
+      --, (S "\"a\"", "a")
       , (C "x" (NLiteral 2) empty, "(lambda (x) 2)")
       , (I 2, "((lambda (x) 2) 3)")
       , (I 2, "((lambda (x) 2) 3)")

@@ -1,9 +1,11 @@
 module Pref
-  ( eval
+  ( codeToVal
+  , eval
   , Val(..)
   ) where
 
 import Data.Map as M
+import Errors
 import Exp
 import Lexer
 import Parser
@@ -28,13 +30,14 @@ instance Show Val where
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
 
-eval :: Exp -> Env -> Maybe Val
-eval (SLiteral s) = const $ Just $ S s -- Strings. Not implemented yet
-eval (NLiteral i) = const $ Just $ I i -- Numbers
-eval (Id v) = M.lookup v -- Variable
-eval (Lambda [v] b) = Just . (C v b) -- Lambda base case
+eval :: Exp -> Env -> Either Error Val
+eval (SLiteral s) = const $ return $ S s -- Strings. Not implemented yet
+eval (NLiteral i) = const $ return $ I i -- Numbers
+eval (Id v) =
+  maybe (Left $ EvalError $ "Can not identify " ++ v) Right . M.lookup v -- Variable
+eval (Lambda [v] b) = return . (C v b) -- Lambda base case
 eval (Lambda (v:vs) b) = eval $ Lambda [v] $ Lambda vs b -- Lambda currying case
-eval (Lambda [] b) = Just . (T b) -- Thunk case
+eval (Lambda [] b) = return . (T b) -- Thunk case
 eval (Let [(v, val)] b) =
   \env -> do
     eVal <- eval val env
@@ -54,30 +57,36 @@ eval (App rator rands) =
   \env -> do
     eRator <- (eval rator env)
     case (eRator, rands) of
-      (C v b e, []) -> Nothing
+      (C v b e, []) ->
+        Left $ EvalError "Function expected arguments applied to nothing"
       (T b e, []) -> eval b e
-      (exp, []) -> Nothing --Not a function application
       (C v b e, [rand]) ->
         eval rand env >>= (\rand -> eval b (insert v rand env))
       (C v b e, r:rs) ->
         eval r env >>= (\rand -> eval (App b rs) (insert v rand env))
-      otherwise -> Nothing -- Non-closure was applied
-eval _ = const Nothing
+      otherwise ->
+        Left $ EvalError $ "Non function used as a function:\n" ++ show rator --Not a function application
+eval e = const $ Left $ EvalError $ "Unidentified expression:\n" ++ show e
 
-evaluateNumOperation :: (Int -> Int -> Int) -> Int -> [Exp] -> Env -> Maybe Val
+evaluateNumOperation ::
+     (Int -> Int -> Int) -> Int -> [Exp] -> Env -> Either Error Val
 evaluateNumOperation op base rands env = do
   maybenums <- mapM (`eval` env) rands
   nums <-
     mapM
       (\x ->
          case x of
-           (I i) -> Just i
-           _ -> Nothing)
+           (I i) -> return i
+           _ ->
+             Left $
+             EvalError $
+             " got a non numeric argument in the following operands:\n" ++
+             show rands)
       maybenums
   return $ I $ Prelude.foldr op base nums
 
-evalList :: [Exp] -> Env -> Maybe [Val]
-evalList [] _ = Just []
+evalList :: [Exp] -> Env -> Either Error [Val]
+evalList [] _ = return []
 evalList (Def id bind:es) e = do
   eBind <- eval bind e
   evalList es (insert id eBind e)
@@ -86,7 +95,7 @@ evalList (exp:es) e = do
   eEs <- evalList es e
   return (eExp : eEs)
 
-codeToVal :: String -> Maybe [Val]
+codeToVal :: String -> Either Error [Val]
 codeToVal code = do
   let tokens = tokenize code
   ptree <- parse tokens
@@ -94,7 +103,7 @@ codeToVal code = do
   evalList asts M.empty
 
 evaluatePref :: String -> String
-evaluatePref code = maybe "Error" show $ codeToVal code
+evaluatePref code = either show show $ codeToVal code
 
 main = do
   putStrLn "Enter a file path: "
@@ -104,9 +113,7 @@ main = do
     ReadMode
     (\h -> do
        fileContent <- hGetContents h
-       putStrLn "Read the following"
-       putStrLn fileContent
-       maybe
-         (putStrLn "Error" >> return ())
+       either
+         (putStrLn . show)
          (mapM_ $ putStrLn . show)
          (codeToVal fileContent))

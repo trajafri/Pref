@@ -2,6 +2,7 @@ module ParserTests
   ( parserTests
   ) where
 
+import Errors
 import Exp
 import Lexer
 import Parser
@@ -43,16 +44,16 @@ errorMsg = " parsed incorrectly"
 allTests =
   [ TestCase $ assertEqual (test ++ errorMsg) ex (parse . tokenize $ test)
   | (test, ex) <-
-      [ (t1, Just [Leaf "a"])
-      , (t2, Just [Node []])
-      , (t3, Just [Node [Leaf "a"]])
-      , (t4, Just [Node [Leaf "a", Leaf "a"]])
-      , (t5, Just [Node [Leaf "lambda", Node [Leaf "a"], Leaf "a"]])
+      [ (t1, return [Leaf "a"])
+      , (t2, return [Node []])
+      , (t3, return [Node [Leaf "a"]])
+      , (t4, return [Node [Leaf "a", Leaf "a"]])
+      , (t5, return [Node [Leaf "lambda", Node [Leaf "a"], Leaf "a"]])
       , ( t6
-        , Just
+        , return
             [Node [Leaf "lambda", Node [Leaf "a"], Node [Leaf "a", Leaf "a"]]])
       , ( t7
-        , Just
+        , return
             [ Node
                 [ Leaf "let"
                 , Node [Node [Leaf "a"], Node [Leaf "b", Leaf "b"]]
@@ -60,7 +61,7 @@ allTests =
                 ]
             ])
       , ( t8
-        , Just
+        , return
             [ Node
                 [ Leaf "let"
                 , Node [Node [Leaf "a"], Node [Leaf "b", Leaf "b"]]
@@ -69,7 +70,7 @@ allTests =
             , Node [Leaf "a"]
             ])
       , ( t9
-        , Just
+        , return
             [ Node
                 [ Leaf "let"
                 , Node [Node [Leaf "a"], Node [Leaf "b", Leaf "b"]]
@@ -79,7 +80,7 @@ allTests =
             , Node [Leaf "a", Leaf "a"]
             ])
       , ( t10
-        , Just
+        , return
             [ Node
                 [ Leaf "let"
                 , Node [Node [Leaf "b", Leaf "b"]]
@@ -88,19 +89,19 @@ allTests =
             , Node [Leaf "define", Leaf "a"]
             , Node [Leaf "a", Leaf "a"]
             ])
-      , (t11, Just [Node [Leaf "a", Leaf "b", Leaf "c", Leaf "d"]])
+      , (t11, return [Node [Leaf "a", Leaf "b", Leaf "c", Leaf "d"]])
       , ( t12
-        , Just
+        , return
             [ Node
                 [ Leaf "lambda"
                 , Node [Leaf "a", Leaf "b", Leaf "c", Leaf "d"]
                 , Leaf "e"
                 ]
             ])
-      , (t13, Just [Node [Leaf "lambda", Node [], Leaf "a"]])
-      , (t14, Just [Node [Leaf "lambda", Node [Node []], Leaf "a"]])
+      , (t13, return [Node [Leaf "lambda", Node [], Leaf "a"]])
+      , (t14, return [Node [Leaf "lambda", Node [Node []], Leaf "a"]])
       , ( t15
-        , Just
+        , return
             [ Node
                 [ Leaf "let"
                 , Node
@@ -123,16 +124,20 @@ allExpTests =
     (test ++ expErrorMsg)
     ex
     (case parse . tokenize $ test of
-       (Just l) -> map treeToExp l)
+       (Right l) -> map treeToExp l)
   | (test, ex) <-
-      [ (t1, [Just $ Id "a"])
-      , (t2, [Nothing])
-      , (t3, [Just $ App (Id "a") []])
-      , (t4, [Just $ App (Id "a") [Id "a"]])
-      , (t5, [Just $ Lambda ["a"] (Id "a")])
-      , (t6, [Just $ Lambda ["a"] (App (Id "a") [Id "a"])])
+      [ (t1, [return $ Id "a"])
+      , ( t2
+        , [ Left $
+            ParseError
+              "Found (). What does this mean?\nDid you mean to make a thunk?"
+          ])
+      , (t3, [return $ App (Id "a") []])
+      , (t4, [return $ App (Id "a") [Id "a"]])
+      , (t5, [return $ Lambda ["a"] (Id "a")])
+      , (t6, [return $ Lambda ["a"] (App (Id "a") [Id "a"])])
       , ( t7
-        , [ Just $
+        , [ return $
             App
               (Id "let")
               [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
@@ -140,35 +145,39 @@ allExpTests =
               ]
           ])
       , ( t8
-        , [ Just $
+        , [ return $
             App
               (Id "let")
               [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
               , App (Id "a") [Id "a"]
               ]
-          , Just $ App (Id "a") []
+          , return $ App (Id "a") []
           ])
       , ( t9
-        , [ Just $
+        , [ return $
             App
               (Id "let")
               [ App (App (Id "a") []) [App (Id "b") [Id "b"]]
               , App (Id "a") [Id "a"]
               ]
-          , Just $ App (Id "define") [Id "a"]
-          , Just $ App (Id "a") [Id "a"]
+          , return $ App (Id "define") [Id "a"]
+          , return $ App (Id "a") [Id "a"]
           ])
       , ( t10
-        , [ Just $ Let [("b", Id "b")] (App (Id "a") [Id "a"])
-          , Just $ App (Id "define") [Id "a"]
-          , Just $ App (Id "a") [Id "a"]
+        , [ return $ Let [("b", Id "b")] (App (Id "a") [Id "a"])
+          , return $ App (Id "define") [Id "a"]
+          , return $ App (Id "a") [Id "a"]
           ])
-      , (t11, [Just $ App (Id "a") [Id "b", Id "c", Id "d"]])
-      , (t12, [Just $ Lambda ["a", "b", "c", "d"] $ Id "e"])
-      , (t13, [Just $ Lambda [] $ Id "a"])
-      , (t14, [Nothing])
+      , (t11, [return $ App (Id "a") [Id "b", Id "c", Id "d"]])
+      , (t12, [return $ Lambda ["a", "b", "c", "d"] $ Id "e"])
+      , (t13, [return $ Lambda [] $ Id "a"])
+      , ( t14
+        , [ Left $
+            ParseError
+              "Found (). What does this mean?\nDid you mean to make a thunk?"
+          ])
       , ( t15
-        , [ Just $
+        , [ return $
             Let
               [("a", Id "a"), ("b", Id "b"), ("c", Id "c"), ("d", Id "d")]
               (Id "e")
@@ -179,7 +188,12 @@ allExpTests =
 failureMsg = " did not trigger an error"
 
 allFails =
-  [ TestCase $ assertEqual (f ++ failureMsg) Nothing (parse . tokenize $ f)
+  [ TestCase $
+  assertBool
+    (f ++ failureMsg)
+    (case parse . tokenize $ f of
+       (Left _) -> True
+       (Right _) -> False)
   | f <- ["(", ")", "(a", "(a (a a)", "(a (a) a", "((", "(()", "(())("]
   ]
 
