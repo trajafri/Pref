@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Pref
   ( codeToVal
   , eval
@@ -35,9 +37,9 @@ eval (SLiteral s) = const $ return $ S s -- Strings. Not implemented yet
 eval (NLiteral i) = const $ return $ I i -- Numbers
 eval (Id v) =
   maybe (Left $ EvalError $ "Can not identify " ++ v) Right . M.lookup v -- Variable
-eval (Lambda [v] b) = return . (C v b) -- Lambda base case
+eval (Lambda [v] b) = return . C v b -- Lambda base case
 eval (Lambda (v:vs) b) = eval $ Lambda [v] $ Lambda vs b -- Lambda currying case
-eval (Lambda [] b) = return . (T b) -- Thunk case
+eval (Lambda [] b) = return . T b -- Thunk case
 eval (Let [(v, val)] b) =
   \env -> do
     eVal <- eval val env
@@ -52,20 +54,19 @@ eval (If cond thn els) =
 eval (App (Id "+") rands) = evaluateNumOperation (+) 0 rands
 eval (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
 eval (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
-eval (App (Id "/") rands) = evaluateNumOperation (div) 1 rands
+eval (App (Id "/") rands) = evaluateNumOperation div 1 rands
 eval (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
 eval (App rator rands) =
   \env -> do
-    eRator <- (eval rator env)
+    eRator <- eval rator env
     case (eRator, rands) of
       (C v b e, []) ->
         Left $ EvalError "Function expected arguments applied to nothing"
       (T b e, []) -> eval b e
-      (C v b e, [rand]) ->
-        eval rand env >>= (\rand -> eval b (insert v rand env))
+      (C v b e, [rand]) -> eval rand env >>= (\rand -> eval b (insert v rand e))
       (C v b e, r:rs) ->
-        eval r env >>= (\rand -> eval (App b rs) (insert v rand env))
-      otherwise ->
+        eval r env >>= (\rand -> eval (App b rs) (insert v rand e))
+      _ ->
         Left $ EvalError $ "Non function used as a function:\n" ++ show rator --Not a function application
 eval e = const $ Left $ EvalError $ "Unidentified expression:\n" ++ show e
 
@@ -75,14 +76,13 @@ evaluateNumOperation op base rands env = do
   maybenums <- mapM (`eval` env) rands
   nums <-
     mapM
-      (\x ->
-         case x of
-           (I i) -> return i
-           _ ->
-             Left $
-             EvalError $
-             " got a non numeric argument in the following operands:\n" ++
-             show rands)
+      (\case
+         (I i) -> return i
+         _ ->
+           Left $
+           EvalError $
+           " got a non numeric argument in the following operands:\n" ++
+           show rands)
       maybenums
   return $ I $ Prelude.foldr op base nums
 
@@ -92,14 +92,13 @@ evaluateStrOperation op base rands env = do
   maybestrs <- mapM (`eval` env) rands
   strs <-
     mapM
-      (\x ->
-         case x of
-           (S i) -> return i
-           _ ->
-             Left $
-             EvalError $
-             " got a non string argument in the following operands:\n" ++
-             show rands)
+      (\case
+         (S i) -> return i
+         _ ->
+           Left $
+           EvalError $
+           " got a non string argument in the following operands:\n" ++
+           show rands)
       maybestrs
   return $ S $ Prelude.foldr op base strs
 
@@ -131,7 +130,4 @@ main = do
     ReadMode
     (\h -> do
        fileContent <- hGetContents h
-       either
-         (putStrLn . show)
-         (mapM_ $ putStrLn . show)
-         (codeToVal fileContent))
+       either (print . show) (mapM_ $ print . show) (codeToVal fileContent))

@@ -28,5 +28,5 @@ instance Show Exp where
     "(If " ++ show c ++ " " ++ show thn ++ " " ++ show els ++ ")"
   show (Let bindings b) =
     "(Let ((" ++
-    unwords (map (\(v, b) -> v ++ (show b)) bindings) ++ ")) " ++ show b ++ ")"
+    unwords (map (\(v, b) -> v ++ show b) bindings) ++ ")) " ++ show b ++ ")"
   show (App tor nds) = "(App " ++ show tor ++ " " ++ show nds ++ ")"

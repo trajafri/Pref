@@ -67,27 +67,27 @@ parseList els -- Case where we either have a '(' or an ID
 -- Maybe there is a better way.
 treeToExp :: PTree -> Either Error Exp
 treeToExp (Leaf v) -- determine what kind of leaf it is
-  | (head v == '\"' && (head . reverse) v == '\"') =
-    return $ SLiteral (zipWith const (tail v) (tail . tail $ v))
-  | otherwise = maybe (return $ Id v) (return . NLiteral) (readMaybe v)
+  | head v == '\"' && last v == '\"' -- String leaf
+   = return $ SLiteral (zipWith const (tail v) (tail . tail $ v))
+  | otherwise = return $ maybe (Id v) NLiteral (readMaybe v)
 treeToExp (Node [Leaf "lambda", Node variables, body]) = do
   bodyExp <- treeToExp body
-  if (all isLeaf variables)
+  if all isLeaf variables
     then return $ Lambda (map (\(Leaf v) -> v) variables) bodyExp
-    else (sequence (map treeToExp variables ++ [return bodyExp])) >>=
-         (\exps -> return $ App (Id "lambda") exps)
+    else App (Id "lambda") <$>
+         sequence (map treeToExp variables ++ [return bodyExp])
 treeToExp (Node [Leaf "let", Node bindings, body]) =
   treeToExp body >>=
   (\bodyExp ->
-     if (all isPair bindings)
+     if all isPair bindings
        then do
-         bindingVars <- traverse treeToExp $ map (\(Node [v, _]) -> v) bindings
-         bindingVal <- traverse treeToExp $ map (\(Node [_, b]) -> b) bindings
+         bindingVars <- traverse (treeToExp . \(Node [v, _]) -> v) bindings
+         bindingVal <- traverse (treeToExp . \(Node [_, b]) -> b) bindings
          return $
            Let (zipWith (\(Id v) b -> (v, b)) bindingVars bindingVal) bodyExp
        else do
          bindingExps <- treeToExp $ Node bindings
-         return $ App (Id "let") $ [bindingExps] ++ [bodyExp])
+         return $ App (Id "let") $ bindingExps : [bodyExp])
 treeToExp (Node [Leaf "if", cond, thn, els]) = do
   condExp <- treeToExp cond
   thenExp <- treeToExp thn
