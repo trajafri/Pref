@@ -4,6 +4,7 @@ module Parser
   , treeToExp
   ) where
 
+import Errors
 import Exp
 import Lexer
 import Text.Read
@@ -34,25 +35,28 @@ isPair _ = False
 
   TODO: Replace Maybe with a monad that contains error msg instead of Nothing
 --}
-parse :: [Token] -> Maybe [PTree]
-parse [] = Just []
+parse :: [Token] -> Either Error [PTree]
+parse [] = return []
 parse ts = do
   (tree, rest) <- parseHelper ts
   parse rest >>= (\finalTrees -> return (tree : finalTrees))
 
 -- Parses non-recursive tokens and returns the parse tree along with
 -- the remaining tokens
-parseHelper :: [Token] -> Maybe (PTree, [Token])
-parseHelper (ID v:ts) = Just (Leaf v, ts)
+parseHelper :: [Token] -> Either Error (PTree, [Token])
+parseHelper (ID v:ts) = return (Leaf v, ts)
 parseHelper (LParen:ts) = do
   (treeList, restTs) <- parseList ts -- Remove '(' and call parseList
   return (Node treeList, restTs)
-parseHelper _ = Nothing
+parseHelper rp =
+  Left $
+  ParseError $
+  "Found an expression beginning with a right parenthesis:\n" ++ show rp
 
 -- Parses recursive tokens (assuming that it is already in a list if "exp")
-parseList :: [Token] -> Maybe ([PTree], [Token])
-parseList [] = Nothing -- List must terminate with a ')'
-parseList (RParen:ts) = Just ([], ts)
+parseList :: [Token] -> Either Error ([PTree], [Token])
+parseList [] = Left $ ParseError "A left parenthesis was not terminated" -- List must terminate with a ')'
+parseList (RParen:ts) = return ([], ts)
 parseList els -- Case where we either have a '(' or an ID
  = do
   (expTree, rest) <- parseHelper els
@@ -61,28 +65,29 @@ parseList els -- Case where we either have a '(' or an ID
 
 -- Currently, I don't like how I have to parse out let's, if's etc.
 -- Maybe there is a better way.
-treeToExp :: PTree -> Maybe Exp
+treeToExp :: PTree -> Either Error Exp
 treeToExp (Leaf v) -- determine what kind of leaf it is
-  | (head v == '"' && (head . reverse) v == '"') = Just $ SLiteral v
-  | otherwise = Just $ maybe (Id v) NLiteral (readMaybe v)
+  | head v == '\"' && last v == '\"' -- String leaf
+   = return $ SLiteral (zipWith const (tail v) (tail . tail $ v))
+  | otherwise = return $ maybe (Id v) NLiteral (readMaybe v)
 treeToExp (Node [Leaf "lambda", Node variables, body]) = do
   bodyExp <- treeToExp body
-  if (all isLeaf variables)
+  if all isLeaf variables
     then return $ Lambda (map (\(Leaf v) -> v) variables) bodyExp
-    else (sequence (map treeToExp variables ++ [Just bodyExp])) >>=
-         (\exps -> return $ App (Id "lambda") exps)
+    else App (Id "lambda") <$>
+         sequence (map treeToExp variables ++ [return bodyExp])
 treeToExp (Node [Leaf "let", Node bindings, body]) =
   treeToExp body >>=
   (\bodyExp ->
-     if (all isPair bindings)
+     if all isPair bindings
        then do
-         bindingVars <- traverse treeToExp $ map (\(Node [v, _]) -> v) bindings
-         bindingVal <- traverse treeToExp $ map (\(Node [_, b]) -> b) bindings
+         bindingVars <- traverse (treeToExp . \(Node [v, _]) -> v) bindings
+         bindingVal <- traverse (treeToExp . \(Node [_, b]) -> b) bindings
          return $
            Let (zipWith (\(Id v) b -> (v, b)) bindingVars bindingVal) bodyExp
        else do
          bindingExps <- treeToExp $ Node bindings
-         return $ App (Id "let") $ [bindingExps] ++ [bodyExp])
+         return $ App (Id "let") $ bindingExps : [bodyExp])
 treeToExp (Node [Leaf "if", cond, thn, els]) = do
   condExp <- treeToExp cond
   thenExp <- treeToExp thn
@@ -95,4 +100,6 @@ treeToExp (Node (rator:rands)) = do
   ratorExp <- treeToExp rator
   randExps <- traverse treeToExp rands
   return $ App ratorExp randExps
-treeToExp _ = Nothing
+treeToExp _ =
+  Left $
+  ParseError "Found (). What does this mean?\nDid you mean to make a thunk?" -- I think this should only happen in case of "()"
