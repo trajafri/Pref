@@ -23,7 +23,12 @@ allTests =
       , (I 3, "(let ((x 1) (y 2) (z 3)) z)")
       , (I 2, "((lambda () 2))")
       , (S "HelloWorld", "(string-append \"Hello\" \"World\")")
-      --, (S "Hello World", "(string-append \"Hello\" \" \" \"World\")") --fails since "words" removes all white spaces
+      , (S "Hello World", "(string-append \"Hello\" \" \" \"World\")")
+      , (I 5, "(define five 5) five")
+      , (I 120, "(fix (lambda (fact x) (if x (* x (fact (- x 1))) 1)) 5)")
+      , ( I 8
+        , "(fix (lambda (fib last curr n)\
+                          \ (if (- n 2) (fib curr (+ last curr) (- n 1)) curr)) 1 1 6)")
       ]
   ]
 
