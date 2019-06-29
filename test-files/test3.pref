@@ -1,0 +1,8 @@
+(define append
+  (fix (lambda (append l1 l2)
+      (if (empty? l1) l2
+        (if (empty? l2) l1
+          (cons (car l1) (append (cdr l1) l2)))))))
+
+(append (cons 1 (cons 2 (cons 3 empty)))
+        (cons 4 (cons 5 (cons 6 empty))))
