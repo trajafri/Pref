@@ -2,7 +2,6 @@ module Lexer
   ( tokenize
   ) where
 
-import Control.Monad.Trans.State
 import Data.Char
 import Data.List
 import Errors
@@ -11,7 +10,7 @@ import Tokens
 -- It might be better to use Text instead of String, but
 -- this is just a toy project so no worries
 tokenize :: String -> Either Error [Token]
-tokenize ls = lexer ls
+tokenize = lexer
   where
     lexer :: String -> Either Error [Token]
     lexer [] = return []

@@ -33,7 +33,7 @@ allTests =
                           \ (if (- n 2) (fib curr (+ last curr) (- n 1)) curr)) 1 1 6)")
       , (I 42, "(car (cons (+ 30 12) empty))")
       , (Cons (I 42) E, "(cdr (cons 2 (cons (+ 30 12) empty)))")
-      , ( (Cons (I 1) (Cons (I 2) (Cons (I 3) E)))
+      , ( Cons (I 1) (Cons (I 2) (Cons (I 3) E))
         , "(cons 1 (cons 2 (cons 3 empty)))")
       ]
   ]

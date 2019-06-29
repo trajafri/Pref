@@ -39,7 +39,7 @@ instance Show Val where
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
   show ls@(Cons car cdr) =
-    "(list" ++ (Prelude.foldr (\x y -> " " ++ x ++ y) ")" $ contents ls)
+    "(list" ++ Prelude.foldr (\x y -> " " ++ x ++ y) ")" (contents ls)
     where
       contents (Cons a b) = show a : contents b
       contents E = []
@@ -52,8 +52,8 @@ defaultEnv = insert "empty" E M.empty
 liftEither :: Either a b -> ReaderT Env (ContT r (Either a)) b
 liftEither = lift . lift
 
-eval :: Exp -> Env -> (Either Error Val)
-eval e env = (flip runContT Right) . (flip runReaderT env) . evalM $ e
+eval :: Exp -> Env -> Either Error Val
+eval e env = (`runContT` Right) . (`runReaderT` env) . evalM $ e
 
 evalM :: Exp -> ReaderT Env (ContT Val (Either Error)) Val
 evalM (SLiteral s) = return $ S s -- Strings
@@ -65,15 +65,11 @@ evalM (Id v) -- Variable
     Nothing -> liftEither . Left . EvalError $ "Can not identify " ++ v
     Just exp -> return exp
 evalM (Lambda [v] b) -- Lambda base case
- = do
-  env <- ask
-  return $ C v b env
+ = C v b <$> ask
 evalM (Lambda (v:vs) b) -- Lambda currying case
  = evalM $ Lambda [v] $ Lambda vs b
 evalM (Lambda [] b) -- Thunk case
- = do
-  env <- ask
-  return $ T b env
+ = T b <$> ask
 evalM (Let [(v, val)] b) -- Let base case
  = do
   eValue <- evalM val
@@ -116,8 +112,7 @@ evalM (App (Id "fix") [func]) -- Z Combinator
 evalM (App rator []) = do
   eRator <- evalM rator
   case eRator of
-    (T b env) -> do
-      local (const env) $ evalM b
+    (T b env) -> local (const env) $ evalM b
     _ ->
       liftEither . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
 evalM (App rator [rand]) = do
