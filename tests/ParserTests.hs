@@ -44,7 +44,7 @@ errorMsg = " parsed incorrectly"
 
 allTests =
   [ TestCase $
-  assertEqual (test ++ errorMsg) ex (parse . (fromRight []) . tokenize $ test)
+  assertEqual (test ++ errorMsg) ex (parse . fromRight [] . tokenize $ test)
   | (test, ex) <-
       [ (t1, return [Leaf "a"])
       , (t2, return [Node []])
@@ -125,7 +125,7 @@ allExpTests =
   assertEqual
     (test ++ expErrorMsg)
     ex
-    (case parse . (fromRight []) . tokenize $ test of
+    (case parse . fromRight [] . tokenize $ test of
        (Right l) -> map treeToExp l)
   | (test, ex) <-
       [ (t1, [return $ Id "a"])
@@ -193,7 +193,7 @@ allFails =
   [ TestCase $
   assertBool
     (f ++ failureMsg)
-    (case parse . (fromRight []) . tokenize $ f of
+    (case parse . fromRight [] . tokenize $ f of
        (Left _) -> True
        (Right _) -> False)
   | f <- ["(", ")", "(a", "(a (a a)", "(a (a) a", "((", "(()", "(())("]
