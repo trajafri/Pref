@@ -7,6 +7,7 @@ module Pref
   ) where
 
 import Control.Monad.Trans
+
 import Control.Monad.Trans.Cont
 import Control.Monad.Trans.Reader
 import Data.Map as M
@@ -48,6 +49,9 @@ instance Show Val where
 defaultEnv :: Env
 defaultEnv = insert "empty" E M.empty
 
+liftEither :: Either a b -> ReaderT Env (ContT r (Either a)) b
+liftEither = lift . lift
+
 eval :: Exp -> Env -> (Either Error Val)
 eval e env = (flip runContT Right) . (flip runReaderT env) . evalM $ e
 
@@ -58,7 +62,7 @@ evalM (Id v) -- Variable
  = do
   env <- ask
   case M.lookup v env of
-    Nothing -> lift . lift . Left . EvalError $ "Can not identify " ++ v
+    Nothing -> liftEither . Left . EvalError $ "Can not identify " ++ v
     Just exp -> return exp
 evalM (Lambda [v] b) -- Lambda base case
  = do
@@ -95,12 +99,12 @@ evalM (App (Id "car") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons a _) -> return a
-    _ -> lift . lift . Left . EvalError $ "Car applied to a non-list value"
+    _ -> liftEither . Left . EvalError $ "Car applied to a non-list value"
 evalM (App (Id "cdr") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons _ d) -> return d
-    _ -> lift . lift . Left . EvalError $ "Cdr applied to a non-list value"
+    _ -> liftEither . Left . EvalError $ "Cdr applied to a non-list value"
 evalM (App (Id "empty?") [ls]) = do
   eLs <- evalM ls
   return $
@@ -115,7 +119,7 @@ evalM (App rator []) = do
     (T b env) -> do
       local (const env) $ evalM b
     _ ->
-      lift . lift . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
+      liftEither . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
 evalM (App rator [rand]) = do
   eRator <- evalM rator
   case eRator of
@@ -123,11 +127,10 @@ evalM (App rator [rand]) = do
       eRand <- evalM rand
       local (const $ insert v eRand env) $ evalM b
     _ ->
-      lift . lift . Left . EvalError $
+      liftEither . Left . EvalError $
       "Non function used as a function:\n" ++ show rator
 evalM (App rator (r:rands)) = evalM (App (App rator [r]) rands)
-evalM e =
-  lift . lift . Left . EvalError $ "Unidentified expression:\n" ++ show e
+evalM e = liftEither . Left . EvalError $ "Unidentified expression:\n" ++ show e
 
 evaluateNumOperation ::
      (Int -> Int -> Int)
@@ -141,7 +144,7 @@ evaluateNumOperation op base rands = do
       (\case
          (I i) -> return i
          _ ->
-           lift . lift . Left . EvalError $
+           liftEither . Left . EvalError $
            " got a non numeric argument in the following operands:\n" ++
            show rands)
       maybenums
@@ -159,7 +162,7 @@ evaluateStrOperation op base rands = do
       (\case
          (S i) -> return i
          _ ->
-           lift . lift . Left . EvalError $
+           liftEither . Left . EvalError $
            " got a non string argument in the following operands:\n" ++
            show rands)
       maybestrs
