@@ -27,6 +27,9 @@ data Val
       Env
   | T Exp --Thunk
       Env
+  | Cons Val
+         Val
+  | E --Empty
   deriving (Eq)
 
 instance Show Val where
@@ -34,6 +37,15 @@ instance Show Val where
   show (I i) = show i
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
+  show ls@(Cons car cdr) = "(" ++ (show . contents $ ls) ++ ")"
+    where
+      contents (Cons a b) = a : contents b
+      contents E = []
+      contents a = [a]
+  show E = "empty"
+
+defaultEnv :: Env
+defaultEnv = insert "empty" E M.empty
 
 eval :: Exp -> Env -> (Either Error Val)
 eval e env = (flip runContT Right) . (flip runReaderT env) . evalM $ e
@@ -74,6 +86,20 @@ evalM (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
 evalM (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
 evalM (App (Id "/") rands) = evaluateNumOperation div 1 rands
 evalM (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
+evalM (App (Id "cons") [car, cdr]) = do
+  eCar <- evalM car
+  eCdr <- evalM cdr
+  return $ Cons eCar eCdr
+evalM (App (Id "car") [cons]) = do
+  eCons <- evalM cons
+  case eCons of
+    (Cons a _) -> return a
+    _ -> lift . lift . Left . EvalError $ "Car applied to a non-list value"
+evalM (App (Id "cdr") [cons]) = do
+  eCons <- evalM cons
+  case eCons of
+    (Cons _ d) -> return d
+    _ -> lift . lift . Left . EvalError $ "Cdr applied to a non-list value"
 evalM (App (Id "fix") [func]) -- Z Combinator
  = evalM (Lambda ["x"] (App func [App (Id "fix") [func], Id "x"]))
 evalM (App rator []) = do
@@ -147,7 +173,7 @@ codeToVal code = do
   tokens <- tokenize code
   ptree <- parse tokens
   asts <- traverse treeToExp ptree
-  evalList asts M.empty
+  evalList asts defaultEnv
 
 evaluatePref :: String -> String
 evaluatePref code = either show show $ codeToVal code
