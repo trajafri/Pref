@@ -2,6 +2,7 @@ module ParserTests
   ( parserTests
   ) where
 
+import Data.Either
 import Errors
 import Exp
 import Lexer
@@ -42,7 +43,8 @@ t15 = "(let ((a a) (b b) (c c) (d d)) e)"
 errorMsg = " parsed incorrectly"
 
 allTests =
-  [ TestCase $ assertEqual (test ++ errorMsg) ex (parse . tokenize $ test)
+  [ TestCase $
+  assertEqual (test ++ errorMsg) ex (parse . (fromRight []) . tokenize $ test)
   | (test, ex) <-
       [ (t1, return [Leaf "a"])
       , (t2, return [Node []])
@@ -123,7 +125,7 @@ allExpTests =
   assertEqual
     (test ++ expErrorMsg)
     ex
-    (case parse . tokenize $ test of
+    (case parse . (fromRight []) . tokenize $ test of
        (Right l) -> map treeToExp l)
   | (test, ex) <-
       [ (t1, [return $ Id "a"])
@@ -191,7 +193,7 @@ allFails =
   [ TestCase $
   assertBool
     (f ++ failureMsg)
-    (case parse . tokenize $ f of
+    (case parse . (fromRight []) . tokenize $ f of
        (Left _) -> True
        (Right _) -> False)
   | f <- ["(", ")", "(a", "(a (a a)", "(a (a) a", "((", "(()", "(())("]

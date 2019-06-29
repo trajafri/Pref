@@ -3,6 +3,7 @@ module LexerTests
   ) where
 
 import Data.Char
+import Errors
 import Lexer
 import Test.HUnit
 import Tokens
@@ -10,7 +11,7 @@ import Tokens
 msg = " not tokenized correctly"
 
 allTests =
-  [ TestCase $ assertEqual (show test ++ msg) ex (tokenize test)
+  [ TestCase $ assertEqual (show test ++ msg) (Right ex) (tokenize test)
   | (test, ex) <-
       [ ("", [])
       , ("(", [LParen])
@@ -40,9 +41,27 @@ allTests =
           , RParen
           , RParen
           ])
+      , ("\"hellothisisastring!\"", [ID "\"hellothisisastring!\""])
+      , ("\"hello this is a string!\"", [ID "\"hello this is a string!\""])
+      , ( "id(define\"string\"2id2"
+        , [ID "id", LParen, ID "define", ID "\"string\"", ID "2", ID "id2"])
+        --Yay, white sapces work now!
       ]
   ]
 
+failureMsg = "Lexer did not trigger an error in the following case:\n"
+
+lexerError =
+  Left . LexerError $ "LexerError: A string was not terminated with a quote."
+
+errorTests =
+  [ TestCase $ assertEqual (failureMsg ++ test) lexerError $ tokenize test
+  | test <- ["\"this is an error"]
+  ]
+
 lexerTests =
-  TestList
-    [TestLabel ("test " ++ show i) test | (i, test) <- zip [1,2 ..] allTests]
+  TestList $
+  [TestLabel ("test " ++ show i) test | (i, test) <- zip [1,2 ..] allTests] ++
+  [ TestLabel ("error test " ++ show i) test
+  | (i, test) <- zip [1,2 ..] errorTests
+  ]
