@@ -114,7 +114,7 @@ evalList (exp:es) e = do
 
 codeToVal :: String -> Either Error [Val]
 codeToVal code = do
-  let tokens = tokenize code
+  tokens <- tokenize code
   ptree <- parse tokens
   asts <- traverse treeToExp ptree
   evalList asts M.empty
