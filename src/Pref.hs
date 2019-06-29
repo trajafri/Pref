@@ -37,11 +37,12 @@ instance Show Val where
   show (I i) = show i
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
-  show ls@(Cons car cdr) = "(" ++ (show . contents $ ls) ++ ")"
+  show ls@(Cons car cdr) =
+    "(list" ++ (Prelude.foldr (\x y -> " " ++ x ++ y) ")" $ contents ls)
     where
-      contents (Cons a b) = a : contents b
+      contents (Cons a b) = show a : contents b
       contents E = []
-      contents a = [a]
+      contents a = [show a]
   show E = "empty"
 
 defaultEnv :: Env
@@ -100,6 +101,12 @@ evalM (App (Id "cdr") [cons]) = do
   case eCons of
     (Cons _ d) -> return d
     _ -> lift . lift . Left . EvalError $ "Cdr applied to a non-list value"
+evalM (App (Id "empty?") [ls]) = do
+  eLs <- evalM ls
+  return $
+    case eLs of
+      E -> I 1
+      _ -> I 0
 evalM (App (Id "fix") [func]) -- Z Combinator
  = evalM (Lambda ["x"] (App func [App (Id "fix") [func], Id "x"]))
 evalM (App rator []) = do
