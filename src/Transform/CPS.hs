@@ -51,13 +51,14 @@ cpsExp (App rator rands) =
 -- TODO: Let case. Once the functions above can deal with that, let should be easy.
 {-- This type, when run, returns an application completely cpsed that's waiting
     on the body of its last continuation.
-    The argument function is then given the last result value and should return the
-    final expression
+    The argument function is then given the last result value and it
+    should return the final expression
 
     Example: In (a (b c) d), the final result is:
              (b c (lambda (res1) (a res1 d (lambda (res2) ______ ))))
-    The function value in AppCPSer gets "Id res2" and
-    returns the body for the final continuation (that goes in place of ________).
+    The function returned by AppCPSer takes in a function, is applied to
+    "Id res2" and returns the body for the final continuation
+    (that goes in place of ________).
 
    * Int is for the argument number (currently, it goes like arg0, arg1, arg2 ...)
    * [Exp] is for the final result of each exp. If something is CPSed, then
