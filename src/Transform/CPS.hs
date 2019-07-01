@@ -31,7 +31,7 @@ cpser (If cond thn els) = If cond (cpser thn) (cpser els)
 -- Application at top, so we apply `id` to the final result
 cpser (App rator rands) = extractCpsAppExp rator rands $ id
 
-{-- When this is called, we are guarenteed to be in a function call
+{-- When this is called, we are guarenteed to be in a function
     with an argument, "k" for the current continuation.
     It invokes the continuation provided by cpser in the lambda case. --}
 cpsExp :: Exp -> Exp
