@@ -1,8 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Pref
-  ( codeToVal
+  ( codeToAst
+  , codeToVal
   , eval
+  , evaluatePref
+  , main
   , Val(..)
   ) where
 
@@ -15,8 +18,8 @@ import Errors
 import Exp
 import Lexer
 import Parser
+import Prelude hiding (exp, id)
 import System.IO
-import Tokens
 
 type Env = Map String Val
 
@@ -36,9 +39,9 @@ data Val
 instance Show Val where
   show (S s) = s
   show (I i) = show i
-  show (C s b env) = "<lambda:" ++ s ++ ">"
-  show (T s e) = "<thunk>"
-  show ls@(Cons car cdr) =
+  show (C s _ _) = "<lambda:" ++ s ++ ">"
+  show (T _ _) = "<thunk>"
+  show ls@(Cons _ _) =
     "(list" ++ Prelude.foldr (\x y -> " " ++ x ++ y) ")" (contents ls)
     where
       contents (Cons a b) = show a : contents b
@@ -164,7 +167,7 @@ evaluateStrOperation op base rands = do
   return . S $ Prelude.foldr op base strs
 
 evalList :: [Exp] -> Env -> Either Error [Val]
-evalList [] env = return []
+evalList [] _ = return []
 evalList (Def id bind:es) env = do
   eBind <- eval bind env
   evalList es (insert id eBind env)
@@ -173,16 +176,22 @@ evalList (exp:es) env = do
   eExps <- evalList es env
   return $ eExp : eExps
 
-codeToVal :: String -> Either Error [Val]
-codeToVal code = do
+codeToAst :: String -> Either Error [Exp]
+codeToAst code = do
   tokens <- tokenize code
   ptree <- parse tokens
   asts <- traverse treeToExp ptree
+  return asts
+
+codeToVal :: String -> Either Error [Val]
+codeToVal code = do
+  asts <- codeToAst code
   evalList asts defaultEnv
 
 evaluatePref :: String -> String
 evaluatePref code = either show show $ codeToVal code
 
+main :: IO ()
 main = do
   putStrLn "Enter a file path: "
   filePath <- getLine

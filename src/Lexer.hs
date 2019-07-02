@@ -3,7 +3,6 @@ module Lexer
   ) where
 
 import Data.Char
-import Data.List
 import Errors
 import Tokens
 
