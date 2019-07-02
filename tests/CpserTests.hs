@@ -3,21 +3,23 @@ module CpserTests
   ) where
 
 import Data.Either
-import Data.Map as M
 import Exp
 import Pref
 import Test.HUnit
 import Transform.CPS
 
 -- TODO: Use parser here instead of making the ast by hand.
+errorMsg :: String
 errorMsg = " cpsed incorrectly"
 
+getAst :: String -> Exp
 getAst = head . fromRight [] . codeToAst
 
+allTests :: [Test]
 allTests =
   [ TestCase $
-  assertEqual (show test ++ errorMsg) (getAst e) (cpser . getAst $ test)
-  | (e, test) <-
+  assertEqual (show testCase ++ errorMsg) (getAst e) (cpser . getAst $ testCase)
+  | (e, testCase) <-
       [ ("1", "1")
       , ("\"S\"", "\"S\"")
       , ("x", "x")
@@ -68,5 +70,9 @@ allTests =
       ]
   ]
 
+cpserTestList :: Test
 cpserTestList =
-  TestList [TestLabel ("test " ++ show i) t | (i, t) <- zip [1,2 ..] allTests]
+  TestList
+    [ TestLabel ("test " ++ show i) t
+    | (i, t) <- zip ([1,2 ..] :: [Int]) allTests
+    ]

@@ -10,42 +10,62 @@ import Parser
 import Test.HUnit
 
 -- These tests depend on Lexer.Tokenize
+t1 :: String
 t1 = "a"
 
+t2 :: String
 t2 = "()"
 
+t3 :: String
 t3 = "(a)"
 
+t4 :: String
 t4 = "(a a)"
 
+t5 :: String
 t5 = "(lambda (a) a)"
 
+t6 :: String
 t6 = "(lambda (a) (a a))"
 
+t7 :: String
 t7 = "(let ((a) (b b)) (a a))"
 
+t8 :: String
 t8 = "(let ((a) (b b)) (a a)) (a)"
 
+t9 :: String
 t9 = "(let ((a) (b b)) (a a)) (define a) (a a)"
 
+t10 :: String
 t10 = "(let ((b b)) (a a)) (define a) (a a)"
 
+t11 :: String
 t11 = "(a b c d)"
 
+t12 :: String
 t12 = "(lambda (a b c d) e)"
 
+t13 :: String
 t13 = "(lambda () a)"
 
+t14 :: String
 t14 = "(lambda (()) a)"
 
+t15 :: String
 t15 = "(let ((a a) (b b) (c c) (d d)) e)"
 
+errorMsg :: String
 errorMsg = " parsed incorrectly"
 
+allTests :: [Test]
 allTests =
   [ TestCase $
-  assertEqual (test ++ errorMsg) ex (parse . fromRight [] . tokenize $ test)
-  | (test, ex) <-
+  assertEqual
+    (testCase ++ errorMsg)
+    ex
+    (parse . fromRight [] . tokenize $ testCase)
+  | (testCase, ex) <-
       [ (t1, return [Leaf "a"])
       , (t2, return [Node []])
       , (t3, return [Node [Leaf "a"]])
@@ -118,16 +138,18 @@ allTests =
       ]
   ]
 
+expErrorMsg :: String
 expErrorMsg = " converted to exp incorrectly."
 
+allExpTests :: [Test]
 allExpTests =
   [ TestCase $
   assertEqual
-    (test ++ expErrorMsg)
+    (testCase ++ expErrorMsg)
     ex
-    (case parse . fromRight [] . tokenize $ test of
+    (case parse . fromRight [] . tokenize $ testCase of
        (Right l) -> map treeToExp l)
-  | (test, ex) <-
+  | (testCase, ex) <-
       [ (t1, [return $ Id "a"])
       , ( t2
         , [ Left $
@@ -187,8 +209,10 @@ allExpTests =
       ]
   ]
 
+failureMsg :: String
 failureMsg = " did not trigger an error"
 
+allFails :: [Test]
 allFails =
   [ TestCase $
   assertBool
@@ -199,8 +223,11 @@ allFails =
   | f <- ["(", ")", "(a", "(a (a a)", "(a (a) a", "((", "(()", "(())("]
   ]
 
+parserTests :: Test
 parserTests =
   TestList $
-  [TestLabel ("test " ++ show i) t | (i, t) <- zip [1,2 ..] allTests] ++
-  [TestLabel ("exp-test " ++ show i) t | (i, t) <- zip [1,2 ..] allExpTests] ++
-  [TestLabel ("failure " ++ show i) f | (i, f) <- zip [1,2 ..] allFails]
+  [TestLabel ("test " ++ show i) t | (i, t) <- zip [1 :: Int,2 ..] allTests] ++
+  [ TestLabel ("exp-test " ++ show i) t
+  | (i, t) <- zip [1 :: Int,2 ..] allExpTests
+  ] ++
+  [TestLabel ("failure " ++ show i) f | (i, f) <- zip [1 :: Int,2 ..] allFails]

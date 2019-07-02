@@ -180,8 +180,7 @@ codeToAst :: String -> Either Error [Exp]
 codeToAst code = do
   tokens <- tokenize code
   ptree <- parse tokens
-  asts <- traverse treeToExp ptree
-  return asts
+  traverse treeToExp ptree
 
 codeToVal :: String -> Either Error [Val]
 codeToVal code = do

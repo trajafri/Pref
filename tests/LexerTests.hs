@@ -2,17 +2,18 @@ module LexerTests
   ( lexerTests
   ) where
 
-import Data.Char
 import Errors
 import Lexer
 import Test.HUnit
 import Tokens
 
+msg :: String
 msg = " not tokenized correctly"
 
+allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show test ++ msg) (Right ex) (tokenize test)
-  | (test, ex) <-
+  [ TestCase $ assertEqual (show testCase ++ msg) (Right ex) (tokenize testCase)
+  | (testCase, ex) <-
       [ ("", [])
       , ("(", [LParen])
       , (")", [RParen])
@@ -49,19 +50,26 @@ allTests =
       ]
   ]
 
+failureMsg :: String
 failureMsg = "Lexer did not trigger an error in the following case:\n"
 
+lexerError :: Either Error [Token]
 lexerError =
   Left . LexerError $ "LexerError: A string was not terminated with a quote."
 
+errorTests :: [Test]
 errorTests =
-  [ TestCase $ assertEqual (failureMsg ++ test) lexerError $ tokenize test
-  | test <- ["\"this is an error"]
+  [ TestCase $
+  assertEqual (failureMsg ++ testCase) lexerError $ tokenize testCase
+  | testCase <- ["\"this is an error"]
   ]
 
+lexerTests :: Test
 lexerTests =
   TestList $
-  [TestLabel ("test " ++ show i) test | (i, test) <- zip [1,2 ..] allTests] ++
-  [ TestLabel ("error test " ++ show i) test
-  | (i, test) <- zip [1,2 ..] errorTests
+  [ TestLabel ("test " ++ show i) testCase
+  | (i, testCase) <- zip ([1,2 ..] :: [Int]) allTests
+  ] ++
+  [ TestLabel ("error test " ++ show i) testCase
+  | (i, testCase) <- zip ([1,2 ..] :: [Int]) errorTests
   ]
