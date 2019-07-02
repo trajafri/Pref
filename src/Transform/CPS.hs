@@ -8,9 +8,9 @@ import Exp
 -- TODO, maybe fix reverse by DList?
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
-  let vars = map fst bindings
-      vals = map snd bindings
+  let (vars, vals) = unzip bindings
    in App (Lambda vars b) vals
+letToApp x = x
 
 {- Cpses every expression
    Assumption: Everything that would be in
