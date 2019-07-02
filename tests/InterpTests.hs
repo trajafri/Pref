@@ -4,18 +4,20 @@ module InterpTests
 
 import Data.Map as M
 import Exp
-import Lexer
-import Parser
 import Pref
 import Test.HUnit
 
+defaultEnv :: Map String Val
 defaultEnv = insert "empty" E empty
 
+errorMsg :: String
 errorMsg = " interpreted incorrectly"
 
+allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show test ++ errorMsg) (return [e]) (codeToVal test)
-  | (e, test) <-
+  [ TestCase $
+  assertEqual (show testCase ++ errorMsg) (return [e]) (codeToVal testCase)
+  | (e, testCase) <-
       [ (I 1, "1")
       , (S "a", "\"a\"")
       , (C "x" (NLiteral 2) defaultEnv, "(lambda (x) 2)")
@@ -38,5 +40,9 @@ allTests =
       ]
   ]
 
+interpTestList :: Test
 interpTestList =
-  TestList [TestLabel ("test " ++ show i) t | (i, t) <- zip [1,2 ..] allTests]
+  TestList
+    [ TestLabel ("test " ++ show i) t
+    | (i, t) <- zip ([1,2 ..] :: [Int]) allTests
+    ]

@@ -6,6 +6,12 @@ import Data.Functor.Identity
 import Exp
 
 -- TODO, maybe fix reverse by DList?
+letToApp :: Exp -> Exp
+letToApp (Let bindings b) =
+  let vars = map fst bindings
+      vals = map snd bindings
+   in App (Lambda vars b) vals
+
 {- Cpses every expression
    Assumption: Everything that would be in
                in the environment is cpsed.
@@ -16,22 +22,20 @@ cpser :: Exp -> Exp
 cpser i@(Id _) = i
 cpser n@(NLiteral _) = n
 cpser s@(SLiteral _) = s
-cpser (Lambda vars b) = (Lambda (vars ++ ["k"]) $ cpsExp b)
--- The way I am doing things, `if` ends up having two cases
+cpser (Lambda vars b) = Lambda (vars ++ ["k"]) $ cpsExp b
+-- The way I am doing things, `if` ends up having three cases
 cpser (If (App rator rands) thn els) =
-  let finalExp = \arg -> If arg (cpser thn) (cpser els)
+  let finalExp arg = If arg (cpser thn) (cpser els)
    in extractCpsAppExp rator rands finalExp
+cpser (If l@(Let _ _) thn els) = cpser (If (letToApp l) thn els)
 cpser (If cond thn els) = If cond (cpser thn) (cpser els)
 {- This case requires something similar to the app case.
     I could just transform it into a lambda application
     and use App case out of the box -}
-cpser (Let bindings b) =
-  let vars = map fst bindings
-      vals = map snd bindings
-   in cpser (App (Lambda vars b) vals)
+cpser l@(Let _ _) = cpser $ letToApp l
 -- Application at top, so we apply `id` to the final result
-cpser (App rator rands) = extractCpsAppExp rator rands $ id
-cpser (Def v b) = (Def v (cpser b))
+cpser (App rator rands) = extractCpsAppExp rator rands id
+cpser (Def v b) = Def v (cpser b)
 
 {- When this is called, we are guarenteed to be in a function
    with an argument, "k" for the current continuation.
@@ -42,13 +46,10 @@ cpsExp n@(NLiteral _) = App (Id "k") [n] -- apply k to value
 cpsExp s@(SLiteral _) = App (Id "k") [s] -- apply k to value
 cpsExp l@(Lambda _ _) = App (Id "k") [cpser l] -- lambda's are simple, apply k!!
 cpsExp (If (App rator rands) thn els) =
-  let finalExp = \arg -> If arg (cpsExp thn) (cpsExp els)
+  let finalExp arg = If arg (cpsExp thn) (cpsExp els)
    in extractCpsAppExp rator rands finalExp
 cpsExp (If cond thn els) = If cond (cpsExp thn) (cpsExp els)
-cpsExp (Let bindings b) =
-  let vars = map fst bindings
-      vals = map snd bindings
-   in cpsExp (App (Lambda vars b) vals)
+cpsExp l@(Let _ _) = cpsExp $ letToApp l
 cpsExp (App rator rands) =
   extractCpsAppExp rator rands $ \arg -> App (Id "k") [arg]
 cpsExp (Def _ _) = undefined --Language can't have definitions in a lambda
@@ -88,7 +89,7 @@ cpsApp [] {- Here, we reconstruct the original application from the
              accumulated bindings for each expression in the application,
              create the last lambda, and wait for its body. -}
  = do
-  exps <- lift $ get
+  exps <- lift get
   i <- get
   let finalResult = "arg" ++ show i
   let fixedExps = reverse exps -- since we were consing items, gotta reverse here
@@ -96,18 +97,18 @@ cpsApp [] {- Here, we reconstruct the original application from the
         Lambda [finalResult] . handleResult . Id $ finalResult
   let finalFunc handleResult =
         App (head fixedExps) $ tail fixedExps ++ [finalExp handleResult]
-  return $ finalFunc
+  return finalFunc
 cpsApp (App rator rands:exs) {- In this case, we cps the application with
                                 a new AppCPSer, and construct the whole
                                 expression using its final values -}
  = do
   count <- get
-  let ((currExpCont, i), _) = (runAppCPSer count []) . cpsApp $ (rator : rands)
+  let ((currExpCont, i), _) = runAppCPSer count [] . cpsApp $ (rator : rands)
   lift . modify $ ((Id $ "arg" ++ show i) :) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
-  let nextExps handleCont = \_ -> nextExpsCont handleCont
+  let nextExps handleCont = const $ nextExpsCont handleCont
   return $ currExpCont . nextExps {- result of nextExps becomes the body of
                                      the last continuation of (App rator rands)! -}
 cpsApp (simpleExp:exs) = do
@@ -116,5 +117,5 @@ cpsApp (simpleExp:exs) = do
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> Exp
 extractCpsAppExp rator rands handleFinalArg =
-  ($ handleFinalArg) . getLastArgHandler . (runAppCPSer 0 []) . cpsApp $
+  ($ handleFinalArg) . getLastArgHandler . runAppCPSer 0 [] . cpsApp $
   (rator : rands)
