@@ -6,7 +6,7 @@ module Parser
 
 import Errors
 import Exp
-import Lexer
+import Prelude hiding (id)
 import Text.Read
 import Tokens
 
