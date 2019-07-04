@@ -6,10 +6,10 @@ module Parser
 where
 
 import           Errors
-import           Exp
+import           Syntax.Exp
 import           Prelude                 hiding ( id )
 import           Text.Read
-import           Tokens
+import           Syntax.Tokens
 
 data PTree
   = Leaf String

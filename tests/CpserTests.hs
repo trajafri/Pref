@@ -4,7 +4,7 @@ module CpserTests
 where
 
 import           Data.Either
-import           Exp
+import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 import           Transform.CPS
@@ -14,7 +14,7 @@ errorMsg :: String
 errorMsg = " cpsed incorrectly"
 
 getAst :: String -> Exp
-getAst = head . fromRight [] . codeToAst
+getAst = head . fromRight [Id "error"] . codeToAst
 
 allTests :: [Test]
 allTests =
@@ -74,10 +74,10 @@ allTests =
                                                                        \)))))))))))))))"
       )
     , ( "(let ((x (add1 2))\
-              \(y (sub1 x))\
+              \(y (sub1 3))\
               \(z (fact 5))) (+ x y z))"
       , "(add1 2 (lambda (arg0)\
-                  \(sub1 x (lambda (arg1)\
+                  \(sub1 3 (lambda (arg1)\
                             \(fact 5 (lambda (arg2)\
                                       \((lambda (x y z k)\
                                          \(+ x \
@@ -88,6 +88,18 @@ allTests =
                                                            \arg1 \
                                                            \arg2\
                                                           \(lambda (arg3) arg3))))))))"
+      )
+    , ( "(let ((x (add1 2))\
+              \(y 2)\
+              \(z (sub1 5))) (+ x 2 z))"
+      , "(add1 2 (lambda (arg0)\
+                  \(sub1 5 (lambda (arg1)\
+                            \((lambda (x y z k)\
+                                 \(+ x 2 z (lambda (arg0)\
+                                              \(k arg0)))) arg0 \
+                                                           \2 \
+                                                           \arg1\
+                                                          \(lambda (arg2) arg2))))))"
       )
     ]
   ]

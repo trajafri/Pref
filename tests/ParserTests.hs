@@ -5,7 +5,7 @@ where
 
 import           Data.Either
 import           Errors
-import           Exp
+import           Syntax.Exp
 import           Lexer
 import           Parser
 import           Test.HUnit

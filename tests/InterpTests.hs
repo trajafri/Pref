@@ -4,7 +4,7 @@ module InterpTests
 where
 
 import           Data.Map                      as M
-import           Exp
+import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 

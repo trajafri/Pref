@@ -6,7 +6,7 @@ where
 import           Errors
 import           Lexer
 import           Test.HUnit
-import           Tokens
+import           Syntax.Tokens
 
 msg :: String
 msg = " not tokenized correctly"

@@ -1,9 +1,8 @@
 module Transform.CPS where
 
-import           Control.Monad.Trans
-import           Control.Monad.Trans.State
+import           Control.Monad.State
 import           Data.Functor.Identity
-import           Exp
+import           Syntax.Exp
 
 -- TODO, maybe fix reverse by DList?
 letToApp :: Exp -> Exp
@@ -88,11 +87,10 @@ cpsApp [] = do
   exps <- lift get
   i    <- get
   let finalResult = "arg" ++ show i
-  let fixedExps   = reverse exps -- since we were consing items, gotta reverse here
+  let (exp : es)  = reverse exps -- since we were consing items, gotta reverse here
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
-  let finalFunc handleResult =
-        App (head fixedExps) $ tail fixedExps ++ [finalExp handleResult]
+  let finalFunc handleResult = App exp $ es ++ [finalExp handleResult]
   return finalFunc {- Here, we reconstruct the original application from the
              accumulated bindings for each expression in the application,
              create the last lambda, and wait for its body. -}
