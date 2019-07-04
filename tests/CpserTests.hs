@@ -73,6 +73,22 @@ allTests =
                                                                        \(lambda (arg3) (k arg3)\
                                                                        \)))))))))))))))"
       )
+    , ( "(let ((x (add1 2))\
+              \(y (sub1 x))\
+              \(z (fact 5))) (+ x y z))"
+      , "(add1 2 (lambda (arg0)\
+                  \(sub1 x (lambda (arg1)\
+                            \(fact 5 (lambda (arg2)\
+                                      \((lambda (x y z k)\
+                                         \(+ x \
+                                            \y \
+                                            \z\
+                                            \(lambda (arg0)\
+                                              \(k arg0)))) arg0 \
+                                                           \arg1 \
+                                                           \arg2\
+                                                          \(lambda (arg3) arg3))))))))"
+      )
     ]
   ]
 

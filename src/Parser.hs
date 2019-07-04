@@ -25,8 +25,8 @@ isLeaf (Leaf _) = True
 isLeaf _        = False
 
 isPair :: PTree -> Bool
-isPair (Node [Leaf _, Leaf _]) = True
-isPair _                       = False
+isPair (Node [Leaf _, _]) = True
+isPair _                  = False
 
 {-- Idea:
   To convert a series of Tokens to a Parse Tree, we will assume

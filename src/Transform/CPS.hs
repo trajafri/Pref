@@ -109,7 +109,7 @@ cpsApp (App rator rands : exs) = do
                                 expression using its final values -} {- result of nextExps becomes the body of
                                      the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  lift . modify $ (simpleExp :) -- The result is the expression itself
+  lift . modify $ (cpser simpleExp :) -- The result is the expression itself
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> Exp
