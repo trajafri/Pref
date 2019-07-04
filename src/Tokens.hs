@@ -1,6 +1,7 @@
 module Tokens
   ( Token(..)
-  ) where
+  )
+where
 
 data Token
   = LParen
