@@ -1,6 +1,7 @@
 module Errors
   ( Error(..)
-  ) where
+  )
+where
 
 -- Warning: This is a really bad way to handle errors.
 -- My approach is is almost as bad as the type 'AnyError'
