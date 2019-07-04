@@ -56,6 +56,12 @@ t14 = "(lambda (()) a)"
 t15 :: String
 t15 = "(let ((a a) (b b) (c c) (d d)) e)"
 
+t16 :: String
+t16 =
+  "(let ((x (add1 2))\
+              \(y (sub1 x))\
+              \(z (fact 5))) (+ x y z))"
+
 errorMsg :: String
 errorMsg = " parsed incorrectly"
 
@@ -141,6 +147,19 @@ allTests =
             ]
         ]
       )
+    , ( t16
+      , return
+        [ Node
+            [ Leaf "let"
+            , Node
+              [ Node [Leaf "x", Node [Leaf "add1", Leaf "2"]]
+              , Node [Leaf "y", Node [Leaf "sub1", Leaf "x"]]
+              , Node [Leaf "z", Node [Leaf "fact", Leaf "5"]]
+              ]
+            , Node [Leaf "+", Leaf "x", Leaf "y", Leaf "z"]
+            ]
+        ]
+      )
     ]
   ]
 
@@ -152,7 +171,7 @@ allExpTests =
   [ TestCase $ assertEqual
       (testCase ++ expErrorMsg)
       ex
-      (map treeToExp (fromRight [] $ (tokenize testCase) >>= parse))
+      (map treeToExp (fromRight [] $ tokenize testCase >>= parse))
   | (testCase, ex) <-
     [ (t1, [return $ Id "a"])
     , ( t2
@@ -205,6 +224,16 @@ allExpTests =
       , [ return $ Let
             [("a", Id "a"), ("b", Id "b"), ("c", Id "c"), ("d", Id "d")]
             (Id "e")
+        ]
+      )
+    , ( t16
+      , [ return
+          $ Let
+              [ ("x", App (Id "add1") [NLiteral 2])
+              , ("y", App (Id "sub1") [Id "x"])
+              , ("z", App (Id "fact") [NLiteral 5])
+              ]
+          $ App (Id "+") [Id "x", Id "y", Id "z"]
         ]
       )
     ]
