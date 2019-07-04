@@ -5,7 +5,7 @@ where
 
 import           Data.Char
 import           Errors
-import           Tokens
+import           Syntax.Tokens
 
 -- It might be better to use Text instead of String, but
 -- this is just a toy project so no worries

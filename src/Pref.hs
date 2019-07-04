@@ -10,13 +10,11 @@ module Pref
   )
 where
 
-import           Control.Monad.Trans
-
-import           Control.Monad.Trans.Cont
-import           Control.Monad.Trans.Reader
+import           Control.Monad.Cont
+import           Control.Monad.Reader
 import           Data.Map                      as M
 import           Errors
-import           Exp
+import           Syntax.Exp
 import           Lexer
 import           Parser
 import           Prelude                 hiding ( exp
