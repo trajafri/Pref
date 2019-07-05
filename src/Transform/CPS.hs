@@ -87,10 +87,10 @@ cpsApp [] = do
   exps <- lift get
   i    <- get
   let finalResult = "arg" ++ show i
-  let (exp : es)  = reverse exps -- since we were consing items, gotta reverse here
+  let (e : es)    = reverse exps -- since we were consing items, gotta reverse here
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
-  let finalFunc handleResult = App exp $ es ++ [finalExp handleResult]
+  let finalFunc handleResult = App e $ es ++ [finalExp handleResult]
   return finalFunc {- Here, we reconstruct the original application from the
              accumulated bindings for each expression in the application,
              create the last lambda, and wait for its body. -}
