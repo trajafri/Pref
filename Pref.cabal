@@ -22,11 +22,13 @@ library
                        Lexer ,
                        Parser ,
                        Transform.CPS ,
+                       Print.Pref ,
                        Syntax.Exp ,
                        Syntax.Tokens
   build-depends:       base >=4.12 && <4.13,
                        containers,
-                       mtl >= 2.2.2
+                       mtl >= 2.2.2,
+                       pretty >= 1.1.3
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
