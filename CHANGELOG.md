@@ -1,0 +1,13 @@
+# Revision history for Pref
+
+## 0.2.0.0 -- 2019-07-05
+
+* Replace String with Text
+
+## 0.1.1.0 -- 2019-07-04
+
+* Add CPSer and Pritty Printing
+
+## 0.1.0.0 -- YYYY-mm-dd
+
+* First version. Released on an unsuspecting world.
