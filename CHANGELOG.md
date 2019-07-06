@@ -1,5 +1,9 @@
 # Revision history for Pref
 
+## 0.2.1.0 -- 2019-07-05
+
+* Use effect-stack in CPSer
+
 ## 0.2.0.0 -- 2019-07-05
 
 * Replace String with Text

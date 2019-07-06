@@ -2,6 +2,7 @@
 
 module Transform.CPS where
 
+import           Control.Monad.Stack.State
 import           Control.Monad.State
 import           Data.Functor.Identity
 import qualified Data.Text                     as T
@@ -87,7 +88,7 @@ getLastArgHandler = fst . fst
     as shown in the example above -}
 cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
-  exps <- lift get
+  exps <- liftState get
   i    <- get
   let finalResult = "arg" <> (T.pack . show $ i)
   let (e : es)    = reverse exps -- since we were consing items, gotta reverse here
@@ -100,7 +101,7 @@ cpsApp [] = do
 cpsApp (App rator rands : exs) = do
   count <- get
   let ((currExpCont, i), _) = runAppCPSer count [] . cpsApp $ (rator : rands)
-  lift . modify $ (Id ("arg" <> (T.pack . show $ i)) :) -- This the result of the whole application
+  liftState . modify $ (Id ("arg" <> (T.pack . show $ i)) :) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
@@ -110,7 +111,7 @@ cpsApp (App rator rands : exs) = do
                                 expression using its final values -} {- result of nextExps becomes the body of
                                      the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  lift . modify $ (cpser simpleExp :) -- The result is the expression itself
+  liftState . modify $ (cpser simpleExp :) -- The result is the expression itself
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> Exp
