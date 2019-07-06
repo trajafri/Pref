@@ -1,7 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Transform.CPS where
 
 import           Control.Monad.State
 import           Data.Functor.Identity
+import qualified Data.Text                     as T
 import           Syntax.Exp
 
 -- TODO, maybe fix reverse by DList?
@@ -86,7 +89,7 @@ cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
   exps <- lift get
   i    <- get
-  let finalResult = "arg" ++ show i
+  let finalResult = "arg" <> (T.pack . show $ i)
   let (e : es)    = reverse exps -- since we were consing items, gotta reverse here
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
@@ -97,7 +100,7 @@ cpsApp [] = do
 cpsApp (App rator rands : exs) = do
   count <- get
   let ((currExpCont, i), _) = runAppCPSer count [] . cpsApp $ (rator : rands)
-  lift . modify $ ((Id $ "arg" ++ show i) :) -- This the result of the whole application
+  lift . modify $ (Id ("arg" <> (T.pack . show $ i)) :) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`

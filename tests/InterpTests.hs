@@ -1,22 +1,26 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module InterpTests
   ( interpTestList
   )
 where
 
 import           Data.Map                      as M
+import qualified Data.Text                     as T
+                                         hiding ( zip )
 import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 
-defaultEnv :: Map String Val
+defaultEnv :: Map T.Text Val
 defaultEnv = insert "empty" E empty
 
-errorMsg :: String
+errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show testCase ++ errorMsg)
+  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
                            (return [e])
                            (codeToVal testCase)
   | (testCase, e) <-
