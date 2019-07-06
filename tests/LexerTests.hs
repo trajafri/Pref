@@ -1,19 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module LexerTests
   ( lexerTests
   )
 where
 
+import           Data.Text                     as T
+                                         hiding ( zip )
 import           Errors
 import           Lexer
 import           Test.HUnit
 import           Syntax.Tokens
 
-msg :: String
+msg :: T.Text
 msg = " not tokenized correctly"
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show testCase ++ msg) (Right ex) (tokenize testCase)
+  [ TestCase
+      $ assertEqual (show $ testCase <> msg) (Right ex) (tokenize testCase)
   | (testCase, ex) <-
     [ (""               , [])
     , ("("              , [LParen])
@@ -54,7 +59,7 @@ allTests =
     ]
   ]
 
-failureMsg :: String
+failureMsg :: T.Text
 failureMsg = "Lexer did not trigger an error in the following case:\n"
 
 lexerError :: Either Error [Token]
@@ -63,7 +68,7 @@ lexerError =
 
 errorTests :: [Test]
 errorTests =
-  [ TestCase $ assertEqual (failureMsg ++ testCase) lexerError $ tokenize
+  [ TestCase $ assertEqual (show $ failureMsg <> testCase) lexerError $ tokenize
       testCase
   | testCase <- ["\"this is an error"]
   ]

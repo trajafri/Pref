@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Parser
   ( PTree(..)
   , parse
@@ -5,6 +7,7 @@ module Parser
   )
 where
 
+import qualified Data.Text                     as T
 import           Errors
 import           Syntax.Exp
 import           Prelude                 hiding ( id )
@@ -12,13 +15,13 @@ import           Text.Read
 import           Syntax.Tokens
 
 data PTree
-  = Leaf String
+  = Leaf T.Text
   | Node [PTree]
   deriving (Eq)
 
 instance Show PTree where
-  show (Leaf v ) = v
-  show (Node ls) = ('(' : (unwords . map show) ls) ++ ")"
+  show (Leaf v ) = T.unpack v
+  show (Node ls) = ('(' : (unwords . map show) ls) <> ")"
 
 isLeaf :: PTree -> Bool
 isLeaf (Leaf _) = True
@@ -52,7 +55,7 @@ parseHelper rp =
   Left
     $  ParseError
     $  "Found an expression beginning with a right parenthesis:\n"
-    ++ show rp
+    <> (T.pack . show $ rp)
 
 -- Parses recursive tokens (assuming that it is already in a list if "exp")
 parseList :: [Token] -> Either Error ([PTree], [Token])
@@ -68,15 +71,16 @@ parseList els = do
 treeToExp :: PTree -> Either Error Exp
 treeToExp (Leaf v)
   | -- determine what kind of leaf it is
-    head v == '\"' && last v == '\"' -- String leaf
-                                     = return $ SLiteral (init . tail $ v)
-  | otherwise = return $ maybe (Id v) NLiteral (readMaybe v)
+    T.head v == '\"' && T.last v == '\"' -- String leaf
+                                         = return
+  $ SLiteral (T.init . T.tail $ v)
+  | otherwise = return $ maybe (Id v) NLiteral (readMaybe . T.unpack $ v)
 treeToExp (Node [Leaf "lambda", Node variables, body]) = do
   bodyExp <- treeToExp body
   if all isLeaf variables
     then return $ Lambda (map (\(Leaf v) -> v) variables) bodyExp
     else App (Id "lambda")
-      <$> sequence (map treeToExp variables ++ [return bodyExp])
+      <$> sequence (map treeToExp variables <> [return bodyExp])
 treeToExp (Node [Leaf "let", Node bindings, body]) = do
   bodyExp <- treeToExp body
   if all isPair bindings

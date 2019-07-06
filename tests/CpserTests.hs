@@ -1,24 +1,26 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module CpserTests
   ( cpserTestList
   )
 where
 
 import           Data.Either
+import qualified Data.Text                     as T
 import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 import           Transform.CPS
 
--- TODO: Use parser here instead of making the ast by hand.
-errorMsg :: String
+errorMsg :: T.Text
 errorMsg = " cpsed incorrectly"
 
-getAst :: String -> Exp
+getAst :: T.Text -> Exp
 getAst = head . fromRight [Id "error"] . codeToAst
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show testCase ++ errorMsg)
+  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
                            (getAst e)
                            (cpser . getAst $ testCase)
   | (testCase, e) <-

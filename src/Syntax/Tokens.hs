@@ -3,13 +3,15 @@ module Syntax.Tokens
   )
 where
 
+import qualified Data.Text                     as T
+
 data Token
   = LParen
   | RParen
-  | ID String
+  | ID T.Text
   deriving (Eq)
 
 instance Show Token where
   show LParen = "("
   show RParen = ")"
-  show (ID v) = v
+  show (ID v) = T.unpack v
