@@ -10,8 +10,8 @@ module Pref
   )
 where
 
-import           Control.Monad.Cont
 import           Control.Monad.Reader
+import qualified Control.Monad.Except          as E
 
 import           Data.Map                      as M
 import qualified Data.Text                     as T
@@ -56,19 +56,16 @@ instance Show Val where
 defaultEnv :: Env
 defaultEnv = insert "empty" E M.empty
 
-liftEither :: Either a b -> ReaderT Env (ContT r (Either a)) b
-liftEither = lift . lift
-
 eval :: Exp -> Env -> Either Error Val
-eval e env = (`runContT` Right) . (`runReaderT` env) . evalM $ e
+eval e env = (`runReaderT` env) . evalM $ e
 
-evalM :: Exp -> ReaderT Env (ContT Val (Either Error)) Val
+evalM :: Exp -> ReaderT Env (Either Error) Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id       v) = do
   env <- ask
   case M.lookup v env of
-    Nothing  -> liftEither . Left . EvalError $ "Can not identify " <> v
+    Nothing  -> E.throwError . EvalError $ "Can not identify " <> v
     Just exp -> return exp -- Variable
 evalM (Lambda [v     ]   b) = C v b <$> ask -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
@@ -95,12 +92,12 @@ evalM (App (Id "car") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons a _) -> return a
-    _ -> liftEither . Left . EvalError $ "Car applied to a non-list value "
+    _          -> E.throwError . EvalError $ "Car applied to a non-list value "
 evalM (App (Id "cdr") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons _ d) -> return d
-    _ -> liftEither . Left . EvalError $ "Cdr applied to a non-list value"
+    _          -> E.throwError . EvalError $ "Cdr applied to a non-list value"
 evalM (App (Id "empty?") [ls]) = do
   eLs <- evalM ls
   return $ case eLs of
@@ -113,8 +110,7 @@ evalM (App rator []) = do
   case eRator of
     (T b env) -> local (const env) $ evalM b
     _ ->
-      liftEither
-        .  Left
+      E.throwError
         .  EvalError
         $  "Non Thunk invocation:\n"
         <> (T.pack . show $ eRator)
@@ -125,32 +121,23 @@ evalM (App rator [rand]) = do
       eRand <- evalM rand
       local (const $ insert v eRand env) $ evalM b
     _ ->
-      liftEither
-        .  Left
+      E.throwError
         .  EvalError
         $  "Non function used as a function:\n"
         <> (T.pack . show $ rator)
 evalM (App rator (r : rands)) = evalM (App (App rator [r]) rands)
 evalM e =
-  liftEither
-    .  Left
-    .  EvalError
-    $  "Unidentified expression:\n"
-    <> (T.pack . show $ e)
+  E.throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
 evaluateNumOperation
-  :: (Int -> Int -> Int)
-  -> Int
-  -> [Exp]
-  -> ReaderT Env (ContT Val (Either Error)) Val
+  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either Error) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
     (\case
       (I i) -> return i
       _ ->
-        liftEither
-          .  Left
+        E.throwError
           .  EvalError
           $  " got a non numeric argument in the following operands:\n"
           <> (T.pack . show $ rands)
@@ -162,15 +149,14 @@ evaluateStrOperation
   :: (T.Text -> T.Text -> T.Text)
   -> T.Text
   -> [Exp]
-  -> ReaderT Env (ContT Val (Either Error)) Val
+  -> ReaderT Env (Either Error) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
     (\case
       (S i) -> return i
       _ ->
-        liftEither
-          .  Left
+        E.throwError
           .  EvalError
           $  " got a non string argument in the following operands:\n"
           <> (T.pack . show $ rands)

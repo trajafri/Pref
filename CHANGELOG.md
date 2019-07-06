@@ -2,6 +2,10 @@
 
 ## 0.2.1.0 -- 2019-07-05
 
+* Remove ContT usage in Pref
+
+## 0.2.1.0 -- 2019-07-05
+
 * Use effect-stack in CPSer
 
 ## 0.2.0.0 -- 2019-07-05
