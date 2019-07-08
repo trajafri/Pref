@@ -39,21 +39,21 @@ prefDefinition = emptyDef { commentLine   = ";"
 lexer :: PT.GenTokenParser String () Identity
 lexer = PT.makeTokenParser prefDefinition
 
-identifier :: ParsecT String () Identity String
+identifier :: Parsec String () String
 identifier = do
   idName@(idC : ids) <- many1 (alphaNum <|> satisfy validIdChar)
   if isDigit idC && all isDigit ids then mzero else return idName
 
-parens :: ParsecT String () Identity String -> ParsecT String () Identity String
+parens :: Parsec String () a -> Parsec String () a
 parens = PT.parens lexer
 
-stringLiteral :: ParsecT String () Identity String
+stringLiteral :: Parsec String () String
 stringLiteral = PT.stringLiteral lexer
 
-decimal :: ParsecT String () Identity Integer
+decimal :: Parsec String () Integer
 decimal = PT.decimal lexer
 
-whiteSpace :: ParsecT String () Identity ()
+whiteSpace :: Parsec String () ()
 whiteSpace = PT.whiteSpace lexer
 
 tokenize :: T.Text -> Either Error [Token]
