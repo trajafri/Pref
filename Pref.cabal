@@ -22,8 +22,7 @@ library
                        Lexer ,
                        Parser ,
                        Transform.CPS ,
-                       Syntax.Exp ,
-                       Syntax.Tokens
+                       Syntax.Exp
   build-depends:       base >=4.12 && <4.13,
                        containers,
                        dlist ==0.8.*,
@@ -45,7 +44,6 @@ test-suite pref-tests
   hs-source-dirs:      tests
   main-is:             Main.hs
   other-modules:       CpserTests ,
-                       LexerTests ,
                        ParserTests ,
                        InterpTests
   build-depends:       HUnit,
