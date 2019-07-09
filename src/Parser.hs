@@ -13,14 +13,22 @@ import           Prelude                 hiding ( id )
 import           Text.Parsec             hiding ( parse )
 
 parse :: Parsec String () [Exp]
-parse = many $ defineParser <|> expParser
+parse = many $ defineParser <|> expParser <|> failIfRight
  where
   defineParser :: Parsec String () Exp
-  defineParser = try $ parens $ do
+  defineParser = try . parens $ do
     define <- identifier
+    whiteSpace
     case define of
-      "define" -> whiteSpace >> expParser
-      _        -> mzero
+      "define" -> do
+        ident <- identifier
+        whiteSpace
+        parsedExp <- expParser
+        return (Def (T.pack ident) parsedExp)
+      _ -> mzero
+
+  failIfRight :: Parsec String () Exp
+  failIfRight = string ")" >> unexpected "dangling right paren"
 
 expParser :: Parsec String () Exp
 expParser =
@@ -46,7 +54,8 @@ expParser =
     whiteSpace
     case ident of
       "lambda" -> do
-        vars <- parens $ many identifier
+        whiteSpace
+        vars <- parens $ identifier `sepBy` whiteSpace
         whiteSpace
         body <- expParser
         return (Lambda (map T.pack vars) body)
