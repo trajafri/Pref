@@ -5,15 +5,13 @@ module Pref
   , codeToVal
   , eval
   , evaluatePref
---  , main
+  , main
   , Val(..)
   )
 where
 
-import           Control.Monad.Except
-import           Control.Monad.Identity
+import           Control.Monad.Except --For throwError
 import           Control.Monad.Reader
---import           Control.Monad.Stack.Except
 import           Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as TIO
@@ -57,10 +55,10 @@ instance Show Val where
 defaultEnv :: Env
 defaultEnv = insert "empty" E M.empty
 
-eval :: Exp -> Env -> Except EvalError Val
+eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`runReaderT` env) . evalM $ e
 
-evalM :: Exp -> ReaderT Env (Except EvalError) Val
+evalM :: Exp -> ReaderT Env (Either EvalError) Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id       v) = do
@@ -131,7 +129,7 @@ evalM e =
   throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
 evaluateNumOperation
-  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Except EvalError) Val
+  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either EvalError) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
@@ -150,7 +148,7 @@ evaluateStrOperation
   :: (T.Text -> T.Text -> T.Text)
   -> T.Text
   -> [Exp]
-  -> ReaderT Env (Except EvalError) Val
+  -> ReaderT Env (Either EvalError) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
@@ -165,7 +163,7 @@ evaluateStrOperation op base rands = do
     maybestrs
   return . S $ Prelude.foldr op base strs
 
-evalList :: [Exp] -> Env -> Except EvalError [Val]
+evalList :: [Exp] -> Env -> Either EvalError [Val]
 evalList []                 _   = return []
 evalList (Def id bind : es) env = do
   eBind <- eval bind env
@@ -175,41 +173,33 @@ evalList (exp : es) env = do
   eExps <- evalList es env
   return $ eExp : eExps
 
-codeToAst :: T.Text -> Except ParseError [Exp]
-codeToAst code = case (runParser parse () "") . T.unpack $ code of
+codeToAst :: T.Text -> Either ParseError [Exp]
+codeToAst code = case runParser parse () "" . T.unpack $ code of
   (Right c) -> return c
   (Left  e) -> throwError e
 
-codeToVal :: T.Text -> ExceptT EvalError (Except ParseError) [Val]
-codeToVal code = case runExcept . codeToAst $ code of
-  (Left  e  ) -> ExceptT . ExceptT . Identity . Left $ e
-  (Right ast) -> case runExcept $ evalList ast defaultEnv of
-    (Left  e   ) -> ExceptT . return . Left $ e
-    (Right vals) -> ExceptT . return . Right $ vals
+codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
+codeToVal code = case codeToAst $ code of
+  (Left  e  ) -> return . Left $ e
+  (Right ast) -> case evalList ast defaultEnv of
+    (Left  e   ) -> Left e
+    (Right vals) -> return . Right $ vals
 
 evaluatePref :: T.Text -> T.Text
 evaluatePref code =
   either (T.pack . show) (either (T.pack . show) (T.pack . show))
-    $ runExcept
-    . runExceptT
-    $ codeToVal code
+    . codeToVal
+    $ code
 
---main :: IO ()
---main = do
---  TIO.putStrLn "Enter a file path: "
---  filePath <- TIO.getLine
---  withFile
---    (T.unpack filePath)
---    ReadMode
---    (\h -> do
---      fileContent <- TIO.hGetContents h
---      let either (print . show) (mapM_ $ print . show) (codeToVal fileContent)
---    )
-
-
-
-
-
-
-
-
+main :: IO ()
+main = do
+  TIO.putStrLn "Enter a file path: "
+  filePath <- TIO.getLine
+  withFile
+    (T.unpack filePath)
+    ReadMode
+    (\h -> do
+      fileContent <- TIO.hGetContents h
+      either (print . show) (either (print . show) $ mapM_ $ print . show)
+        $ codeToVal fileContent
+    )
