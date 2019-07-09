@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                Pref
-version:             0.2.1.2
+version:             0.3.0.0
 -- synopsis:
 -- description:
 license:             BSD3
@@ -17,12 +17,12 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Pref ,
-                       Errors ,
+  exposed-modules:     Pref,
+                       Syntax.Exp,
+                       Transform.CPS
+  other-modules:       Errors ,
                        Lexer ,
-                       Parser ,
-                       Transform.CPS ,
-                       Syntax.Exp
+                       Parser
   build-depends:       base >=4.12 && <4.13,
                        containers,
                        dlist ==0.8.*,

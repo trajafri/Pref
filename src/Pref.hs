@@ -174,9 +174,8 @@ evalList (exp : es) env = do
   return $ eExp : eExps
 
 codeToAst :: T.Text -> Either ParseError [Exp]
-codeToAst code = case runParser parse () "" . T.unpack $ code of
-  (Right c) -> return c
-  (Left  e) -> throwError e
+codeToAst code =
+  either throwError return $ runParser parse () "" . T.unpack $ code
 
 codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
 codeToVal code = case codeToAst $ code of
