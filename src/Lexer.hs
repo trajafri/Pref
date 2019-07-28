@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Lexer
   ( decimal

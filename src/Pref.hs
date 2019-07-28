@@ -66,9 +66,9 @@ evalM (Id       v) = do
   case M.lookup v env of
     Nothing  -> throwError . EvalError $ "Can not identify " <> v
     Just exp -> return exp -- Variable
-evalM (Lambda [v     ]   b) = C v b <$> ask -- Lambda base case
+evalM (Lambda [v     ]   b) = asks (C v b) -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []         b) = T b <$> ask -- Thunk case
+evalM (Lambda []         b) = asks (T b) -- Thunk case
 evalM (Let    [(v, val)] b) = do
   eValue <- evalM val
   local (insert v eValue) $ evalM b -- Let base case
@@ -178,17 +178,15 @@ codeToAst code =
   either throwError return $ runParser parse () "" . T.unpack $ code
 
 codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
-codeToVal code = case codeToAst $ code of
+codeToVal code = case codeToAst code of
   (Left  e  ) -> return . Left $ e
   (Right ast) -> case evalList ast defaultEnv of
     (Left  e   ) -> Left e
     (Right vals) -> return . Right $ vals
 
 evaluatePref :: T.Text -> T.Text
-evaluatePref code =
-  either (T.pack . show) (either (T.pack . show) (T.pack . show))
-    . codeToVal
-    $ code
+evaluatePref =
+  either (T.pack . show) (either (T.pack . show) (T.pack . show)) . codeToVal
 
 main :: IO ()
 main = do
