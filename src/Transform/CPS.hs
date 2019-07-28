@@ -109,7 +109,7 @@ cpsApp (App rator rands : exs) = do
   count <- get
   let ((currExpCont, i), _) =
         runAppCPSer count empty . cpsApp $ (rator : rands)
-  liftState . modify $ (flip snoc $ Id ("arg" <> (T.pack . show $ i))) -- This the result of the whole application
+  liftState . modify $ flip snoc (Id ("arg" <> (T.pack . show $ i))) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
@@ -119,7 +119,7 @@ cpsApp (App rator rands : exs) = do
                                 expression using its final values -} {- result of nextExps becomes the body of
                                      the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  liftState . modify $ (flip snoc $ cpser simpleExp) -- The result is the expression cpsed
+  liftState . modify $ flip snoc $ cpser simpleExp -- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> Exp

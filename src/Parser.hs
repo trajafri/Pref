@@ -23,19 +23,15 @@ parse = many $ defineParser <|> expParser <|> failIfRight
       "define" -> do
         ident <- identifier
         whiteSpace
-        parsedExp <- expParser
-        return (Def (T.pack ident) parsedExp)
+        Def (T.pack ident) <$> expParser
       _ -> mzero
 
   failIfRight :: Parsec String () Exp
   failIfRight = string ")" >> unexpected "dangling right paren"
 
 expParser :: Parsec String () Exp
-expParser =
-  idParser
-    <|> decimalParser
-    <|> stringParser
-    <|> (parens (lambdaParser <|> letParser <|> ifParser <|> appParser))
+expParser = idParser <|> decimalParser <|> stringParser <|> parens
+  (lambdaParser <|> letParser <|> ifParser <|> appParser)
 
  where
   -- Since I made identifier, I use an explicit try here.
@@ -57,8 +53,7 @@ expParser =
         whiteSpace
         vars <- parens $ identifier `sepBy` whiteSpace
         whiteSpace
-        body <- expParser
-        return (Lambda (map T.pack vars) body)
+        Lambda (map T.pack vars) <$> expParser
       _ -> mzero
 
   letParser :: Parsec String () Exp
@@ -68,8 +63,8 @@ expParser =
     case ident of
       "let" -> do
         bindings <- parens $ many
-          ( parens
-          $ (do
+          (parens
+            (do
               var <- identifier
               whiteSpace
               binding <- expParser
@@ -77,8 +72,7 @@ expParser =
             )
           )
         whiteSpace
-        body <- expParser
-        return (Let bindings body)
+        Let bindings <$> expParser
       _ -> mzero
 
   ifParser :: Parsec String () Exp
@@ -92,8 +86,7 @@ expParser =
         whiteSpace
         thn <- expParser
         whiteSpace
-        els <- expParser
-        return (If cond thn els)
+        If cond thn <$> expParser
       _ -> mzero
 
   appParser :: Parsec String () Exp

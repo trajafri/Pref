@@ -5,4 +5,4 @@ where
 
 import qualified Data.Text                     as T
 
-data EvalError = EvalError T.Text deriving (Show, Eq)
+newtype EvalError = EvalError T.Text deriving (Show, Eq)
