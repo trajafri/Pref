@@ -7,6 +7,9 @@ import           Control.Monad.State
 import           Data.DList
 import           Data.Functor.Identity
 import qualified Data.Text                     as T
+import           Prelude                 hiding ( head
+                                                , tail
+                                                )
 import           Syntax.Exp
 
 {- NOTE: This CPSer does not account for currying done
@@ -94,7 +97,8 @@ cpsApp [] = do
   exps <- liftState get
   i    <- get
   let finalResult = "arg" <> (T.pack . show $ i)
-  let (e : es)    = toList exps
+  let e           = head exps
+  let es          = toList . tail $ exps
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
   let finalFunc handleResult = App e $ es ++ [finalExp handleResult]
