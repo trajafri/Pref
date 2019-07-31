@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Transform.CPS where
 
@@ -12,9 +13,33 @@ import           Prelude                 hiding ( head
                                                 )
 import           Syntax.Exp
 
+{- Based on the command line option, we can decide
+   what collector to use
+   Collector will be used to store function
+   identifiers that are undefined in Pref,
+   but could be built-in functions in some other language.
+   This way, we can generate simple cpsed version of these
+   functions (assuming they are simple in the target lang).
+-}
+class Collector a where
+  type Elem a
+  collect :: Elem a -> a -> a
+
+-- Ignores the given item
+instance Collector () where
+  collect _ i = i
+
+-- Set
+instance Collector [e] where
+  type Elem [e] = e
+  collect e ls | elem e ls = ls
+               | otherwise = e : ls
+
+
 {- NOTE: This CPSer does not account for currying done
          by interpreter
 -}
+
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
   let (vars, vals) = unzip bindings in App (Lambda vars b) vals
