@@ -13,6 +13,10 @@ import           Prelude                 hiding ( head
                                                 )
 import           Syntax.Exp
 
+{- NOTE: This CPSer does not account for currying done
+         by interpreter
+-}
+
 {- Based on the command line option, we can decide
    what collector to use
    Collector will be used to store function
@@ -20,25 +24,12 @@ import           Syntax.Exp
    but could be built-in functions in some other language.
    This way, we can generate simple cpsed version of these
    functions (assuming they are simple in the target lang).
+   Example: If we see zero?, we generate a simple cpsed version
+   of zero?, i.e (define zero?k (lambda (x k) (k (zero? x))))
 -}
 class Collector a where
   type Elem a
   collect :: Elem a -> a -> a
-
--- Ignores the given item
-instance Collector () where
-  collect _ i = i
-
--- Set
-instance Collector [e] where
-  type Elem [e] = e
-  collect e ls | elem e ls = ls
-               | otherwise = e : ls
-
-
-{- NOTE: This CPSer does not account for currying done
-         by interpreter
--}
 
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
@@ -97,7 +88,7 @@ cpsExp (Def _ _) = undefined --Language can't have definitions in a lambda
             (b c (lambda (res1) (a res1 d (lambda (res2) ______ ))))
    The function returned by AppCPSer takes in a function, is applied to
    "Id res2" and returns the body for the final continuation
-   (that goes in place of ________).
+   (that goes in place of ______ ).
 
   * Int is for the argument number (currently, it goes like arg0, arg1, arg2 ...)
   * [Exp] is for the final result of each exp. If something is CPSed, then
