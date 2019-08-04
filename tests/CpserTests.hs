@@ -5,12 +5,21 @@ module CpserTests
   )
 where
 
+import           Control.Monad.State
 import           Data.Either
 import qualified Data.Text                     as T
 import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 import           Transform.CPS
+
+newtype Unit = U ()
+
+instance Collector Unit where
+  collect _ u = u
+  updateVars _ u = u
+  removeVars _ u = u
+
 
 errorMsg :: T.Text
 errorMsg = " cpsed incorrectly"
@@ -20,9 +29,10 @@ getAst = head . fromRight [Id "error"] . codeToAst
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
-                           (getAst e)
-                           (cpser . getAst $ testCase)
+  [ TestCase $ assertEqual
+      (show $ testCase <> errorMsg)
+      (getAst e)
+      (fst . flip runState (U ()) $ cpser . getAst $ testCase)
   | (testCase, e) <-
     [ ("1", "1")
     , ("\"S\"", "\"S\"")
