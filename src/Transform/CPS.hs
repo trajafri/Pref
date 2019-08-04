@@ -29,10 +29,13 @@ import           Syntax.Exp
 class Collector a where
   collect :: T.Text -> a -> a -- To collect free vars
   collect _ a = a
+
   getFixedExp :: Exp -> a -> Exp -- Returns the approprate Exp to use in place if the given Exp
   getFixedExp e _ = e -- Returns the approprate Exp to use in place if the given Exp
+
   updateVars :: [T.Text] -> a -> a -- To update scoped vars
   updateVars _ a = a
+
   removeVars :: [T.Text] -> a -> a -- To remove vars not in scope
   removeVars _ a = a
 
