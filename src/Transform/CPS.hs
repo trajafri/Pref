@@ -27,13 +27,13 @@ import           Syntax.Exp
    of zero?, i.e (define zero?k (lambda (x k) (k (zero? x))))
 -}
 class Collector a where
-  collect :: T.Text -> a -> a -- To collect free vars
+  collect :: (T.Text, Int) -> a -> a -- To collect free vars
   collect _ a = a
 
   getFixedExp :: Exp -> a -> Exp -- Returns the approprate Exp to use in place if the given Exp
   getFixedExp e _ = e -- Returns the approprate Exp to use in place if the given Exp
 
-  getFreeVars :: a -> [T.Text]
+  getFreeVars :: a -> [(T.Text, Int)]
   getFreeVars _ = []
 
   updateVars :: [T.Text] -> a -> a -- To update scoped vars
@@ -175,7 +175,7 @@ cpsApp (App rator rands : exs) = do
 cpsApp (simpleExp : exs) = do
   collection <- liftState . liftState $ get
   case simpleExp of
-    (Id x) -> liftState . liftState . modify $ collect x
+    (Id x) -> liftState . liftState . modify $ collect (x, length exs)
     _      -> return ()
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
