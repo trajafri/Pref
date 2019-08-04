@@ -161,7 +161,7 @@ cpsApp [] = do
 -- expression using its final values
 cpsApp (App rator rands : exs) = do
   vars <- liftState get
-  liftState . modify $ const empty
+  liftState . modify $ const empty -- This is because we want to start with a fresh list
   currExpCont <- cpsApp $ (rator : rands) -- CPS the application, and get the cont function
   liftState . modify $ const vars
   i <- get
