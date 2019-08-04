@@ -17,6 +17,7 @@ newtype Unit = U ()
 
 instance Collector Unit where
   collect _ u = u
+  getFixedExp e _ = e
   updateVars _ u = u
   removeVars _ u = u
 
