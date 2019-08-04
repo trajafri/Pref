@@ -149,8 +149,11 @@ cpsApp [] = do
 -- In this case, we cps the application with a new AppCPSer, and construct the whole
 -- expression using its final values
 cpsApp (App rator rands : exs) = do
+  vars <- liftState get
+  liftState . modify $ const empty
   currExpCont <- cpsApp $ (rator : rands) -- CPS the application, and get the cont function
-  i           <- get
+  liftState . modify $ const vars
+  i <- get
   liftState . modify $ flip snoc (Id ("arg" <> (T.pack . show $ i))) -- This is the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
