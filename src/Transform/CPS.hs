@@ -30,8 +30,6 @@ class Collector a where
   collect :: T.Text -> a -> a -- To collect free vars
   updateVars :: [T.Text] -> a -> a -- To update scoped vars
   removeVars :: [T.Text] -> a -> a -- To remove vars not in scope
-  getFreeVars :: a -> [T.Text]
-  getScopedVars :: a -> [T.Text]
 
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
