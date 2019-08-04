@@ -54,6 +54,7 @@ test-suite pref-tests
                        Pref,
                        base >=4.12 && <4.13,
                        containers,
+                       mtl >= 2.2.2,
                        test-framework,
                        test-framework-hunit,
                        text >= 1.2.3
