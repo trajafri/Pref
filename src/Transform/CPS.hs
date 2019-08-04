@@ -28,6 +28,7 @@ import           Syntax.Exp
 -}
 class Collector a where
   collect :: T.Text -> a -> a -- To collect free vars
+  getFixedExp :: Exp -> a -> Exp -- Returns the approprate Exp to use in place if the given Exp
   updateVars :: [T.Text] -> a -> a -- To update scoped vars
   removeVars :: [T.Text] -> a -> a -- To remove vars not in scope
 
@@ -168,8 +169,9 @@ cpsApp (simpleExp : exs) = do
     _      -> return ()
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
+  let properExp = getFixedExp cpsedSimpleExp updatedCollection
   liftState . liftState . modify $ const updatedCollection
-  liftState . modify $ flip snoc $ cpsedSimpleExp -- The result is the expression cpsed
+  liftState . modify $ flip snoc $ properExp -- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Collector c => Exp -> [Exp] -> (Exp -> Exp) -> State c Exp
