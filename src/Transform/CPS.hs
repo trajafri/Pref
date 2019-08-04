@@ -33,6 +33,9 @@ class Collector a where
   getFixedExp :: Exp -> a -> Exp -- Returns the approprate Exp to use in place if the given Exp
   getFixedExp e _ = e -- Returns the approprate Exp to use in place if the given Exp
 
+  getFreeVars :: a -> [T.Text]
+  getFreeVars _ = []
+
   updateVars :: [T.Text] -> a -> a -- To update scoped vars
   updateVars _ a = a
 
