@@ -80,6 +80,7 @@ cpser l@(Let _     _    ) = cpser $ letToApp l
 -- Application at top, so we apply `id` to the final result
 cpser (  App rator rands) = extractCpsAppExp rator rands id
 cpser (  Def v     b    ) = do
+  modify $ updateVars [v]
   cpsedBody <- cpser b
   return $ Def v cpsedBody
 
