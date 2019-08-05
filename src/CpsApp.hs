@@ -13,7 +13,9 @@ import           Transform.CPS
 data FreeAndScoped = FAS [(T.Text, Int)] [T.Text]
 instance Collector FreeAndScoped where
   collect e@(var, arity) c@(FAS free scoped) =
-    if elem e free then c else FAS ((var <> "k", arity) : free) scoped
+    if elem e free || elem var scoped
+      then c
+      else FAS ((var, arity) : free) scoped
 
   getFixedExp i@(Id txt) (FAS free _) =
     if elem txt $ map fst free then Id $ txt <> "k" else i
@@ -30,7 +32,7 @@ cliParser =
   (,,)
     `parsedBy` reqPos "filePath"
     `andBy`    reqPos "outFilePath"
-    `andBy`    boolFlag "Add free variable definitions"
+    `andBy`    boolFlag "defineFree"
 
 cps :: (String, String, Bool) -> IO ()
 cps (fp, op, defineFree) = do
