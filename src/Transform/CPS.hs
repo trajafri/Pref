@@ -181,23 +181,15 @@ cpsApp (App rator rands : exs) = do
 {- result of nextExps becomes the body of the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
   collection <- liftState . liftState $ get
-  case simpleExp of
-    (Id x) -> liftState . liftState . modify $ collect (x, length exs)
-    _      -> return ()
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
-  let properExp = getFixedExp cpsedSimpleExp updatedCollection
-  liftState . liftState . modify $ const updatedCollection
-  liftState . modify $ flip snoc $ properExp -- The result is the expression cpsed
+  liftState . liftState . put $ updatedCollection
+  liftState . modify $ flip snoc $ cpsedSimpleExp-- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Collector c => Exp -> [Exp] -> (Exp -> Exp) -> State c Exp
 extractCpsAppExp rator rands handleFinalArg = do
   c <- get
-  return
-    . ($ handleFinalArg)
-    . getLastArgHandler
-    . runAppCPSer 0 empty c
-    $ cpsApp
-    $ rator
-    : rands
+  let appCpser = runAppCPSer 0 empty c . cpsApp $ rator : rands
+  put $ getCollection appCpser
+  return . ($ handleFinalArg) . getLastArgHandler $ appCpser
