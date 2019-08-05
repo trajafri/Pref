@@ -12,10 +12,8 @@ import           Transform.CPS
 
 data FreeAndScoped = FAS [(T.Text, Int)] [T.Text]
 instance Collector FreeAndScoped where
-  collect e@(var, arity) c@(FAS free scoped) =
-    if elem e free || elem var scoped
-      then c
-      else FAS ((var, arity) : free) scoped
+  collect e@(var, _) c@(FAS free scoped) =
+    if elem e free || elem var scoped then c else FAS (e : free) scoped
 
   getFixedExp i@(Id txt) (FAS free _) =
     if elem txt $ map fst free then Id $ txt <> "k" else i
