@@ -48,10 +48,10 @@ cps (fp, op, defineFree) = do
  where
   defineFreeVar :: (T.Text, Int) -> Exp
   defineFreeVar (var, arity) =
-    let vars = map (T.pack . show) [1 .. arity]
-    in  Def var $ Lambda (vars <> ["k"]) $ App
+    let vars = map (T.pack . ("var" <>) . show) [1 .. arity]
+    in  Def (var <> "k") $ Lambda (vars <> ["k"]) $ App
           (Id "k")
-          [App (Id $ var <> "k") $ map Id vars]
+          [App (Id $ var) $ map Id vars]
 
 
 main :: IO ()
