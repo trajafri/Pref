@@ -35,6 +35,7 @@ executable cps
   build-depends:       argparser >=0.3.4 && <1.0.0,
                        base >=4.12 && <4.13,
                        Pref >=0.3.0.0,
+                       mtl >= 2.2.2,
                        text >= 1.2.3
   default-language:    Haskell2010
   ghc-options:         -Wall
