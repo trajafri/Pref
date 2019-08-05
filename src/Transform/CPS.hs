@@ -152,9 +152,15 @@ cpsApp [] = do
   let finalResult = "arg" <> (T.pack . show $ i)
   let e           = head exps
   let es          = toList . tail $ exps
+  case e of
+    Id x -> liftState . liftState . modify $ collect (x, length es)
+    _    -> return ()
+  collection <- liftState . liftState $ get
+  let adjustedE = getFixedExp e collection
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
-  let finalFunc handleResult = App e $ es ++ [finalExp handleResult]
+  let finalFunc handleResult = App adjustedE $ es ++ [finalExp handleResult]
+  liftState . liftState . modify $ updateVars [finalResult]
   return $ finalFunc {- Here, we reconstruct the original application from the
                                  accumulated bindings for each expression in the application,
                                  create the last lambda, and wait for its body. -}
