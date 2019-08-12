@@ -13,10 +13,6 @@ import           Pref
 import           Test.HUnit
 import           Transform.CPS
 
-data Unit = U
-
-instance Collector Unit where
-
 errorMsg :: T.Text
 errorMsg = " cpsed incorrectly"
 
@@ -25,9 +21,10 @@ getAst = head . fromRight [Id "error"] . codeToAst
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
-                           (getAst e)
-                           (fst . flip runState U $ cpser . getAst $ testCase)
+  [ TestCase $ assertEqual
+      (show $ testCase <> errorMsg)
+      (getAst e)
+      (fst . flip runState Unit $ cpser . getAst $ testCase)
   | (testCase, e) <-
     [ ("1", "1")
     , ("\"S\"", "\"S\"")
