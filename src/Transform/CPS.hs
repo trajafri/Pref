@@ -6,6 +6,9 @@ module Transform.CPS where
 import           Control.Monad.Stack.State
 import           Control.Monad.State
 import           Data.DList
+import           Data.List               hiding ( head
+                                                , tail
+                                                )
 import qualified Data.Text                     as T
 import           Prelude                 hiding ( head
                                                 , tail
@@ -22,25 +25,37 @@ import           Syntax.Exp
    identifiers that are undefined in Pref,
    but could be built-in functions in some other language.
    This way, we can generate simple cpsed version of these
-   functions (assuming they are simple in the target lang).
+   functions (assuming they are *simple* in the target lang).
    Example: If we see zero?, we generate a simple cpsed version
    of zero?, i.e (define zero?k (lambda (x k) (k (zero? x))))
 -}
-class Collector a where
-  collect :: (T.Text, Int) -> a -> a -- To collect free vars
-  collect _ a = a
+data Collector = Unit | FreeAndScoped [(T.Text, Int)] [T.Text]
 
-  getFixedExp :: Exp -> a -> Exp -- Returns the approprate Exp to use in place if the given Exp
-  getFixedExp e _ = e -- Returns the approprate Exp to use in place if the given Exp
+collect :: (T.Text, Int) -> Collector -> Collector
+collect e@(var, _) c@(FreeAndScoped free scoped) =
+  if elem e free || elem var scoped then c else FreeAndScoped (e : free) scoped
+collect _ x = x
 
-  getFreeVars :: a -> [(T.Text, Int)]
-  getFreeVars _ = []
+getFixedExp :: Exp -> Collector -> Exp
+getFixedExp i@(Id txt) (FreeAndScoped free _) =
+  if elem txt $ fmap fst free then Id $ txt <> "k" else i
+getFixedExp ex _ = ex
 
-  updateVars :: [T.Text] -> a -> a -- To update scoped vars
-  updateVars _ a = a
+getFreeVars :: Collector -> [(T.Text, Int)]
+getFreeVars (FreeAndScoped free _) = free
+getFreeVars _                      = []
 
-  removeVars :: [T.Text] -> a -> a -- To remove vars not in scope
-  removeVars _ a = a
+updateVars :: [T.Text] -> Collector -> Collector
+updateVars newVars (FreeAndScoped free oldVars) =
+  FreeAndScoped free $ newVars <> oldVars
+updateVars _ c = c
+
+removeVars :: [T.Text] -> Collector -> Collector
+removeVars oldVars (FreeAndScoped free newVars) =
+  FreeAndScoped free $ newVars \\ oldVars
+removeVars _ c = c
+
+
 
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
@@ -53,7 +68,7 @@ letToApp x = x
                (i.e, every Id is cpsed)
    cpser handles the top level only.
    It only introduces continuation to expressions if needed -}
-cpser :: Collector c => Exp -> State c Exp
+cpser :: Exp -> State Collector Exp
 cpser i@(Id       _   ) = return i
 cpser n@(NLiteral _   ) = return n
 cpser s@(SLiteral _   ) = return s
@@ -88,7 +103,7 @@ cpser (  Def v     b    ) = do
    with an argument, "k" for the current continuation.
    It invokes the continuation provided by cpser in the lambda case.
 -}
-cpsExp :: Collector c => Exp -> State c Exp
+cpsExp :: Exp -> State Collector Exp
 cpsExp i@(Id       _) = return $ App (Id "k") [i] -- apply k to value
 cpsExp n@(NLiteral _) = return $ App (Id "k") [n] -- apply k to value
 cpsExp s@(SLiteral _) = return $ App (Id "k") [s] -- apply k to value
@@ -126,26 +141,26 @@ cpsExp (Def _ _) = undefined --can't have definitions in a lambda yet
     it's final result will be some argn. -}
 type K = ((Exp -> Exp) -> Exp)
 
-type AppCPSer c = StateT Int (StateT (DList Exp) (State c)) K
+type AppCPSer = StateT Int (StateT (DList Exp) (State Collector)) K
 
-type AppCPSerResult c = (((K, Int), DList Exp), c)
+type AppCPSerResult = (((K, Int), DList Exp), Collector)
 
-runAppCPSer :: Int -> DList Exp -> c -> AppCPSer c -> AppCPSerResult c
+runAppCPSer :: Int -> DList Exp -> Collector -> AppCPSer -> AppCPSerResult
 runAppCPSer i ls c appCpser =
   (`runState` c) . (`runStateT` ls) . (`runStateT` i) $ appCpser
 
-getLastIndex :: AppCPSerResult c -> Int
+getLastIndex :: AppCPSerResult -> Int
 getLastIndex = snd . fst . fst
 
-getLastArgHandler :: AppCPSerResult c -> K
+getLastArgHandler :: AppCPSerResult -> K
 getLastArgHandler = fst . fst . fst
 
-getCollection :: AppCPSerResult c -> c
+getCollection :: AppCPSerResult -> Collector
 getCollection = snd
 
 {- The following function CPSes the application case
     as shown in the example above -}
-cpsApp :: Collector c => [Exp] -> AppCPSer c
+cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
   exps <- liftState get
   i    <- get
@@ -187,7 +202,7 @@ cpsApp (simpleExp : exs) = do
   liftState . modify $ flip snoc $ cpsedSimpleExp-- The result is the expression cpsed
   cpsApp exs
 
-extractCpsAppExp :: Collector c => Exp -> [Exp] -> (Exp -> Exp) -> State c Exp
+extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> State Collector Exp
 extractCpsAppExp rator rands handleFinalArg = do
   c <- get
   let appCpser = runAppCPSer 0 empty c . cpsApp $ rator : rands
