@@ -5,20 +5,28 @@ module Main where
 import           Control.Monad.State
 import           Data.List
 import qualified Data.Text                     as T
+import           Options.Applicative
 import qualified Pref                          as P
-import           System.Console.ArgParser
 import           Syntax.Exp
 import           Transform.CPS
 
-cliParser :: ParserSpec (String, String, Bool)
+cliParser :: Parser (Bool, String)
 cliParser =
-  (,,)
-    `parsedBy` reqPos "filePath"
-    `andBy`    reqPos "outFilePath"
-    `andBy`    boolFlag "defineFree"
+  (,)
+    <$> switch
+          (  long "defineFreeFuncs"
+          <> short 'd'
+          <> help
+               "Define CPS versions of free functions found in the target program"
+          )
+    <*> argument
+          str
+          (  metavar "TARGET"
+          <> help "Path to target pref program that needs to be transformed"
+          )
 
-cps :: (String, String, Bool) -> IO ()
-cps (fp, op, defineFree) = do
+cps :: (Bool, String) -> IO ()
+cps (defineFree, fp) = do
   let collector = if defineFree then FreeAndScoped [] [] else Unit
   fileContent <- readFile fp
   ast <- either (fail "Provided file should be syntatically correct.") return
@@ -29,7 +37,7 @@ cps (fp, op, defineFree) = do
         intercalate "\n"
           $  map (show . defineFreeVar) (getFreeVars collection)
           <> ["\n"]
-  writeFile op $ definitions <> cpsedFile
+  putStr $ definitions <> cpsedFile
 
  where
   defineFreeVar :: (T.Text, Int) -> Exp
@@ -41,5 +49,11 @@ cps (fp, op, defineFree) = do
 
 
 main :: IO ()
-main = withParseResult cliParser cps
+main = execParser opts >>= cps
+ where
+  opts = info
+    (cliParser <**> helper)
+    (fullDesc <> progDesc "CPS the given TARGET" <> header
+      "cps - CPS a target pref program"
+    )
 
