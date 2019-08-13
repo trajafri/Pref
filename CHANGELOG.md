@@ -1,5 +1,9 @@
 # Revision history for Pref
 
+## 0.3.1.0 -- 2019-07-08
+
+* Add command line app for cps
+
 ## 0.3.0.0 -- 2019-07-08
 
 * Hello Parsec!
