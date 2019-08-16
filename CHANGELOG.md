@@ -1,6 +1,10 @@
 # Revision history for Pref
 
-## 0.3.1.0 -- 2019-07-08
+## 0.3.1.1 -- 2019-08-16
+
+* Parse Text instead of String
+
+## 0.3.1.0 -- 2019-08-14
 
 * Add command line app for cps
 
