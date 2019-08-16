@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts #-}
 
 module Lexer
   ( decimal
@@ -30,20 +30,193 @@ identifier = try $ do
   if isDigit idC && all isDigit ids then mzero else return $ T.pack idName
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
-parens p = try $ do
+parens p = do
   _   <- string "("
   res <- p
   _   <- string ")"
   return res
 
-stringLiteral :: Parsec T.Text () T.Text
-stringLiteral = try $ do
-  _   <- string "\""
-  res <- many alphaNum
-  _   <- string "\""
-  return $ T.pack res
+-- Parsers shamelessly copied from source
+number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer
+number base baseDigit = do
+  digits <- many1 baseDigit
+  let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
+  seq n (return n)
 
--- Below two shamelessly copied from source
+stringLiteral :: Parsec T.Text () T.Text
+stringLiteral = do
+  x <-
+    (do
+      str <- between (char '"') (char '"' <?> "end of string") (many stringChar)
+      return (foldr (maybe id (:)) "" str) <?> "literal string"
+    )
+  whiteSpace
+  return $ T.pack x
+
+stringChar :: Parsec T.Text () (Maybe Char)
+stringChar =
+  do
+      c <- stringLetter
+      return (Just c)
+    <|> stringEscape
+    <?> "string character"
+
+stringLetter :: Parsec T.Text () Char
+stringLetter = satisfy (\c -> (c /= '"') && (c /= '\\') && (c > '\026'))
+
+stringEscape :: Parsec T.Text () (Maybe Char)
+stringEscape = do
+  _ <- char '\\'
+  do
+      _ <- escapeGap
+      return Nothing
+    <|> do
+          _ <- escapeEmpty
+          return Nothing
+    <|> do
+          esc <- escapeCode
+          return (Just esc)
+
+escapeEmpty :: Parsec T.Text () Char
+escapeEmpty = char '&'
+
+escapeGap :: Parsec T.Text () Char
+escapeGap = do
+  _ <- many1 space
+  char '\\' <?> "end of string gap"
+
+escapeCode :: Parsec T.Text () Char
+escapeCode =
+  charEsc <|> charNum <|> charAscii <|> charControl <?> "escape code"
+
+charControl :: Parsec T.Text () Char
+charControl = do
+  _    <- char '^'
+  code <- upper
+  return (toEnum (fromEnum code - fromEnum 'A' + 1))
+
+charNum :: Parsec T.Text () Char
+charNum = do
+  code <-
+    decimal
+    <|> do
+          _ <- char 'o'
+          number 8 octDigit
+    <|> do
+          _ <- char 'x'
+          number 16 hexDigit
+  if code > 0x10FFFF
+    then fail "invalid escape sequence"
+    else return (toEnum (fromInteger code))
+
+charEsc :: Parsec T.Text () Char
+charEsc = choice (map parseEsc escMap)
+ where
+  parseEsc (c, code) = do
+    _ <- char c
+    return code
+
+charAscii :: Parsec T.Text () Char
+charAscii = choice (map parseAscii asciiMap)
+ where
+  parseAscii (asc, code) = try
+    (do
+      _ <- string asc
+      return code
+    )
+
+
+-- escape code tables
+escMap :: [(Char, Char)]
+escMap = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")
+
+asciiMap :: [(String, Char)]
+asciiMap = zip (ascii3codes ++ ascii2codes) (ascii3 ++ ascii2)
+
+ascii2codes :: [String]
+ascii2codes =
+  [ "BS"
+  , "HT"
+  , "LF"
+  , "VT"
+  , "FF"
+  , "CR"
+  , "SO"
+  , "SI"
+  , "EM"
+  , "FS"
+  , "GS"
+  , "RS"
+  , "US"
+  , "SP"
+  ]
+
+ascii3codes :: [String]
+ascii3codes =
+  [ "NUL"
+  , "SOH"
+  , "STX"
+  , "ETX"
+  , "EOT"
+  , "ENQ"
+  , "ACK"
+  , "BEL"
+  , "DLE"
+  , "DC1"
+  , "DC2"
+  , "DC3"
+  , "DC4"
+  , "NAK"
+  , "SYN"
+  , "ETB"
+  , "CAN"
+  , "SUB"
+  , "ESC"
+  , "DEL"
+  ]
+
+ascii2 :: [Char]
+ascii2 =
+  [ '\BS'
+  , '\HT'
+  , '\LF'
+  , '\VT'
+  , '\FF'
+  , '\CR'
+  , '\SO'
+  , '\SI'
+  , '\EM'
+  , '\FS'
+  , '\GS'
+  , '\RS'
+  , '\US'
+  , '\SP'
+  ]
+
+ascii3 :: [Char]
+ascii3 =
+  [ '\NUL'
+  , '\SOH'
+  , '\STX'
+  , '\ETX'
+  , '\EOT'
+  , '\ENQ'
+  , '\ACK'
+  , '\BEL'
+  , '\DLE'
+  , '\DC1'
+  , '\DC2'
+  , '\DC3'
+  , '\DC4'
+  , '\NAK'
+  , '\SYN'
+  , '\ETB'
+  , '\CAN'
+  , '\SUB'
+  , '\ESC'
+  , '\DEL'
+  ]
+
 decimal :: Parsec T.Text () Integer
 decimal = try $ do
   digits <- many1 $ (satisfy isDigit <?> "digit")
