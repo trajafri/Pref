@@ -45,21 +45,15 @@ number base baseDigit = do
 
 stringLiteral :: Parsec T.Text () T.Text
 stringLiteral = do
-  x <-
-    (do
-      str <- between (char '"') (char '"' <?> "end of string") (many stringChar)
-      return (foldr (maybe id (:)) "" str) <?> "literal string"
-    )
+  x <- do
+    str <- between (char '"') (char '"' <?> "end of string") (many stringChar)
+    return (foldr (maybe id (:)) "" str) <?> "literal string"
+
   whiteSpace
   return $ T.pack x
 
 stringChar :: Parsec T.Text () (Maybe Char)
-stringChar =
-  do
-      c <- stringLetter
-      return (Just c)
-    <|> stringEscape
-    <?> "string character"
+stringChar = (Just <$> stringLetter) <|> stringEscape <?> "string character"
 
 stringLetter :: Parsec T.Text () Char
 stringLetter = satisfy (\c -> (c /= '"') && (c /= '\\') && (c > '\026'))
@@ -73,9 +67,8 @@ stringEscape = do
     <|> do
           _ <- escapeEmpty
           return Nothing
-    <|> do
-          esc <- escapeCode
-          return (Just esc)
+    <|> Just
+    <$> escapeCode
 
 escapeEmpty :: Parsec T.Text () Char
 escapeEmpty = char '&'
@@ -128,10 +121,10 @@ charAscii = choice (map parseAscii asciiMap)
 
 -- escape code tables
 escMap :: [(Char, Char)]
-escMap = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")
+escMap = zip "abfnrtv\\\"\'" "\a\b\f\n\r\t\v\\\"\'"
 
 asciiMap :: [(String, Char)]
-asciiMap = zip (ascii3codes ++ ascii2codes) (ascii3 ++ ascii2)
+asciiMap = zip (ascii3codes ++ ascii2codes) $ ascii3 ++ ascii2
 
 ascii2codes :: [String]
 ascii2codes =
@@ -175,7 +168,7 @@ ascii3codes =
   , "DEL"
   ]
 
-ascii2 :: [Char]
+ascii2 :: String
 ascii2 =
   [ '\BS'
   , '\HT'
@@ -193,7 +186,7 @@ ascii2 =
   , '\SP'
   ]
 
-ascii3 :: [Char]
+ascii3 :: String
 ascii3 =
   [ '\NUL'
   , '\SOH'
@@ -219,7 +212,7 @@ ascii3 =
 
 decimal :: Parsec T.Text () Integer
 decimal = try $ do
-  digits <- many1 $ (satisfy isDigit <?> "digit")
+  digits <- many1 (satisfy isDigit <?> "digit")
   let n = foldl (\x d -> 10 * x + toInteger (digitToInt d)) 0 digits
   seq n (return n)
 
