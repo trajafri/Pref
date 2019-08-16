@@ -146,8 +146,7 @@ type AppCPSer = StateT Int (StateT (DList Exp) (State Collector)) K
 type AppCPSerResult = (((K, Int), DList Exp), Collector)
 
 runAppCPSer :: Int -> DList Exp -> Collector -> AppCPSer -> AppCPSerResult
-runAppCPSer i ls c appCpser =
-  (`runState` c) . (`runStateT` ls) . (`runStateT` i) $ appCpser
+runAppCPSer i ls c = (`runState` c) . (`runStateT` ls) . (`runStateT` i)
 
 getLastIndex :: AppCPSerResult -> Int
 getLastIndex = snd . fst . fst
@@ -176,7 +175,7 @@ cpsApp [] = do
         Lambda [finalResult] . handleResult . Id $ finalResult
   let finalFunc handleResult = App adjustedE $ es ++ [finalExp handleResult]
   liftState . liftState . modify $ updateVars [finalResult]
-  return $ finalFunc {- Here, we reconstruct the original application from the
+  return finalFunc {- Here, we reconstruct the original application from the
                                  accumulated bindings for each expression in the application,
                                  create the last lambda, and wait for its body. -}
 -- In this case, we cps the application with a new AppCPSer, and construct the whole
@@ -184,7 +183,7 @@ cpsApp [] = do
 cpsApp (App rator rands : exs) = do
   vars <- liftState get
   liftState . modify $ const empty -- This is because we want to start with a fresh list
-  currExpCont <- cpsApp $ (rator : rands) -- CPS the application, and get the cont function
+  currExpCont <- cpsApp (rator : rands) -- CPS the application, and get the cont function
   liftState . modify $ const vars
   i <- get
   liftState . modify $ flip snoc (Id ("arg" <> (T.pack . show $ i))) -- This is the result of the whole application
@@ -199,7 +198,7 @@ cpsApp (simpleExp : exs) = do
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
   liftState . liftState . put $ updatedCollection
-  liftState . modify $ flip snoc $ cpsedSimpleExp-- The result is the expression cpsed
+  liftState . modify $ flip snoc cpsedSimpleExp-- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> State Collector Exp
