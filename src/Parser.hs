@@ -13,7 +13,7 @@ import           Prelude                 hiding ( id )
 import           Text.Parsec             hiding ( parse )
 
 parse :: Parsec T.Text () [Exp]
-parse = many $ defineParser <|> expParser <|> failIfRight
+parse = many $ whiteSpace >> (defineParser <|> expParser <|> failIfRight)
  where
   defineParser :: Parsec T.Text () Exp
   defineParser = try . parens $ do
@@ -57,21 +57,29 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
 
   letParser :: Parsec T.Text () Exp
   letParser = try $ do
+    whiteSpace
     ident <- identifier
     whiteSpace
     case ident of
       "let" -> do
-        bindings <- parens $ many
-          (parens
-            (do
-              var <- identifier
-              whiteSpace
-              binding <- expParser
-              return (var, binding)
-            )
-          )
+        bindings <-
+          parens
+          $  many
+          $  whiteSpace
+          >> (parens
+               (do
+                 whiteSpace
+                 var <- identifier
+                 whiteSpace
+                 binding <- expParser
+                 whiteSpace
+                 return (var, binding)
+               )
+             )
         whiteSpace
-        Let bindings <$> expParser
+        res <- Let bindings <$> expParser
+        whiteSpace
+        return res
       _ -> mzero
 
   ifParser :: Parsec T.Text () Exp
