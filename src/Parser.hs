@@ -45,14 +45,17 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
 
   lambdaParser :: Parsec T.Text () Exp
   lambdaParser = try $ do
+    whiteSpace
     ident <- identifier
     whiteSpace
     case ident of
       "lambda" -> do
         whiteSpace
-        vars <- parens $ identifier `sepBy` whiteSpace
+        vars <- parens $ (whiteSpace >> identifier) `sepBy` whiteSpace
         whiteSpace
-        Lambda vars <$> expParser
+        res <- Lambda vars <$> expParser
+        whiteSpace
+        return res
       _ -> mzero
 
   letParser :: Parsec T.Text () Exp
@@ -84,6 +87,7 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
 
   ifParser :: Parsec T.Text () Exp
   ifParser = try $ do
+    whiteSpace
     ident <- identifier
     whiteSpace
     case ident of
@@ -98,6 +102,7 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
 
   appParser :: Parsec T.Text () Exp
   appParser = do
+    whiteSpace
     rator <- expParser
     whiteSpace
     rands <- many $ whiteSpace >> expParser
