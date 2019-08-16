@@ -28,7 +28,7 @@ import qualified Text.ParserCombinators.Parsec.Token
 
 prefDefinition :: LanguageDef ()
 prefDefinition = emptyDef { commentLine   = ";"
-                          , commentStart  = "|#"
+                          , commentStart  = "#|"
                           , commentEnd    = "|#"
                           , caseSensitive = True
                           }
