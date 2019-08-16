@@ -65,20 +65,15 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
     whiteSpace
     case ident of
       "let" -> do
-        bindings <-
-          parens
-          $  many
-          $  whiteSpace
-          >> (parens
-               (do
-                 whiteSpace
-                 var <- identifier
-                 whiteSpace
-                 binding <- expParser
-                 whiteSpace
-                 return (var, binding)
-               )
-             )
+        bindings <- parens $ many $ whiteSpace >> parens
+          (do
+            whiteSpace
+            var <- identifier
+            whiteSpace
+            binding <- expParser
+            whiteSpace
+            return (var, binding)
+          )
         whiteSpace
         res <- Let bindings <$> expParser
         whiteSpace
