@@ -12,10 +12,10 @@ import           Syntax.Exp
 import           Prelude                 hiding ( id )
 import           Text.Parsec             hiding ( parse )
 
-parse :: Parsec String () [Exp]
+parse :: Parsec T.Text () [Exp]
 parse = many $ defineParser <|> expParser <|> failIfRight
  where
-  defineParser :: Parsec String () Exp
+  defineParser :: Parsec T.Text () Exp
   defineParser = try . parens $ do
     define <- identifier
     whiteSpace
@@ -23,28 +23,27 @@ parse = many $ defineParser <|> expParser <|> failIfRight
       "define" -> do
         ident <- identifier
         whiteSpace
-        Def (T.pack ident) <$> expParser
+        Def ident <$> expParser
       _ -> mzero
 
-  failIfRight :: Parsec String () Exp
+  failIfRight :: Parsec T.Text () Exp
   failIfRight = string ")" >> unexpected "dangling right paren"
 
-expParser :: Parsec String () Exp
+expParser :: Parsec T.Text () Exp
 expParser = idParser <|> decimalParser <|> stringParser <|> parens
   (lambdaParser <|> letParser <|> ifParser <|> appParser)
 
  where
-  -- Since I made identifier, I use an explicit try here.
-  idParser :: Parsec String () Exp
-  idParser = try identifier >>= (return . Id . T.pack)
+  idParser :: Parsec T.Text () Exp
+  idParser = identifier >>= (return . Id)
 
-  decimalParser :: Parsec String () Exp
+  decimalParser :: Parsec T.Text () Exp
   decimalParser = decimal >>= (return . NLiteral . fromIntegral)
 
-  stringParser :: Parsec String () Exp
-  stringParser = stringLiteral >>= (return . SLiteral . T.pack)
+  stringParser :: Parsec T.Text () Exp
+  stringParser = stringLiteral >>= (return . SLiteral)
 
-  lambdaParser :: Parsec String () Exp
+  lambdaParser :: Parsec T.Text () Exp
   lambdaParser = try $ do
     ident <- identifier
     whiteSpace
@@ -53,10 +52,10 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
         whiteSpace
         vars <- parens $ identifier `sepBy` whiteSpace
         whiteSpace
-        Lambda (map T.pack vars) <$> expParser
+        Lambda vars <$> expParser
       _ -> mzero
 
-  letParser :: Parsec String () Exp
+  letParser :: Parsec T.Text () Exp
   letParser = try $ do
     ident <- identifier
     whiteSpace
@@ -68,14 +67,14 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
               var <- identifier
               whiteSpace
               binding <- expParser
-              return (T.pack var, binding)
+              return (var, binding)
             )
           )
         whiteSpace
         Let bindings <$> expParser
       _ -> mzero
 
-  ifParser :: Parsec String () Exp
+  ifParser :: Parsec T.Text () Exp
   ifParser = try $ do
     ident <- identifier
     whiteSpace
@@ -89,7 +88,7 @@ expParser = idParser <|> decimalParser <|> stringParser <|> parens
         If cond thn <$> expParser
       _ -> mzero
 
-  appParser :: Parsec String () Exp
+  appParser :: Parsec T.Text () Exp
   appParser = do
     rator <- expParser
     whiteSpace

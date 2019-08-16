@@ -11,11 +11,9 @@ where
 
 import           Control.Monad.Identity
 import           Data.Char
---import qualified Data.Text                     as T
+import           Data.List                      ( nub )
+import qualified Data.Text                     as T
 import           Text.Parsec
-import           Text.ParserCombinators.Parsec.Language
-import qualified Text.ParserCombinators.Parsec.Token
-                                               as PT
 
 {- Regarding using the "user state" in ParsecT:
    If we were to stack ParsecT on some monad M, the
@@ -26,32 +24,66 @@ import qualified Text.ParserCombinators.Parsec.Token
    effect would should up even if ParsecT backtracked.
 -}
 
-prefDefinition :: LanguageDef ()
-prefDefinition = emptyDef { commentLine   = ";"
-                          , commentStart  = "#|"
-                          , commentEnd    = "|#"
-                          , caseSensitive = True
-                          }
-
-lexer :: PT.GenTokenParser String () Identity
-lexer = PT.makeTokenParser prefDefinition
-
-identifier :: Parsec String () String
-identifier = do
+identifier :: Parsec T.Text () T.Text
+identifier = try $ do
   idName@(idC : ids) <- many1 (alphaNum <|> satisfy validIdChar)
-  if isDigit idC && all isDigit ids then mzero else return idName
+  if isDigit idC && all isDigit ids then mzero else return $ T.pack idName
 
-parens :: Parsec String () a -> Parsec String () a
-parens = PT.parens lexer
+parens :: Parsec T.Text () a -> Parsec T.Text () a
+parens p = try $ do
+  _   <- string "("
+  res <- p
+  _   <- string ")"
+  return res
 
-stringLiteral :: Parsec String () String
-stringLiteral = PT.stringLiteral lexer
+stringLiteral :: Parsec T.Text () T.Text
+stringLiteral = try $ do
+  _   <- string "\""
+  res <- many alphaNum
+  _   <- string "\""
+  return $ T.pack res
 
-decimal :: Parsec String () Integer
-decimal = PT.decimal lexer
+-- Below two shamelessly copied from source
+decimal :: Parsec T.Text () Integer
+decimal = try $ do
+  digits <- many1 $ (satisfy isDigit <?> "digit")
+  let n = foldl (\x d -> 10 * x + toInteger (digitToInt d)) 0 digits
+  seq n (return n)
 
-whiteSpace :: Parsec String () ()
-whiteSpace = PT.whiteSpace lexer
+whiteSpace :: Parsec T.Text () ()
+whiteSpace =
+  skipMany (simpleSpace <|> oneLineComment <|> multiLineComment <?> "")
+
+simpleSpace :: Parsec T.Text () ()
+simpleSpace = skipMany1 (satisfy isSpace)
+
+oneLineComment :: Parsec T.Text () ()
+oneLineComment = do
+  _ <- try (string ";")
+  skipMany (satisfy (/= '\n'))
+  return ()
+
+multiLineComment :: Parsec T.Text () ()
+multiLineComment = do
+  _ <- try (string "#|")
+  inComment
+
+inComment :: Parsec T.Text () ()
+inComment = inCommentSingle
+
+inCommentSingle :: Parsec T.Text () ()
+inCommentSingle =
+  do
+      _ <- try (string "|#")
+      return ()
+    <|> do
+          skipMany1 (noneOf startEnd)
+          inCommentSingle
+    <|> do
+          _ <- oneOf startEnd
+          inCommentSingle
+    <?> "end of comment"
+  where startEnd = nub ("|#" ++ "#|")
 
 validIdChar :: Char -> Bool
 validIdChar c = all
