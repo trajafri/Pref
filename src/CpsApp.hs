@@ -45,7 +45,7 @@ cps (defineFree, fp) = do
     let vars = map (T.pack . ("var" <>) . show) [1 .. arity]
     in  Def (var <> "k") $ Lambda (vars <> ["k"]) $ App
           (Id "k")
-          [App (Id $ var) $ map Id vars]
+          [App (Id var) $ map Id vars]
 
 
 main :: IO ()
