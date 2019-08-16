@@ -31,9 +31,9 @@ identifier = try $ do
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
 parens p = do
-  _   <- string "("
+  _   <- char '('
   res <- p
-  _   <- string ")"
+  _   <- char ')'
   return res
 
 -- Parsers shamelessly copied from source
@@ -232,13 +232,13 @@ simpleSpace = skipMany1 (satisfy isSpace)
 
 oneLineComment :: Parsec T.Text () ()
 oneLineComment = do
-  _ <- try (string ";")
+  _ <- try $ char ';'
   skipMany (satisfy (/= '\n'))
   return ()
 
 multiLineComment :: Parsec T.Text () ()
 multiLineComment = do
-  _ <- try (string "#|")
+  _ <- try $ string "#|"
   inComment
 
 inComment :: Parsec T.Text () ()
@@ -247,7 +247,7 @@ inComment = inCommentSingle
 inCommentSingle :: Parsec T.Text () ()
 inCommentSingle =
   do
-      _ <- try (string "|#")
+      _ <- try $ string "|#"
       return ()
     <|> do
           skipMany1 (noneOf startEnd)
