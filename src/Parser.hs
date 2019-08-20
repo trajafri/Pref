@@ -9,11 +9,15 @@ import           Control.Monad.Except
 import qualified Data.Text                     as T
 import           Lexer
 import           Syntax.Exp
-import           Prelude                 hiding ( id )
+import           Prelude                 hiding ( id
+                                                , exp
+                                                )
 import           Text.Parsec             hiding ( parse )
 
 parse :: Parsec T.Text () [Exp]
-parse = many $ whiteSpace >> (defineParser <|> expParser <|> failIfRight)
+parse =
+  many $ whiteSpace >> (defineParser <|> expParser <|> failIfRight) >>= \exp ->
+    whiteSpace >> return exp
  where
   defineParser :: Parsec T.Text () Exp
   defineParser = try . parens $ do
