@@ -164,10 +164,15 @@ evaluateStrOperation op base rands = do
   return . S $ Prelude.foldr op base strs
 
 evalList :: [Exp] -> Env -> Either EvalError [Val]
-evalList []                 _   = return []
-evalList (Def id bind : es) env = do
-  eBind <- eval bind env
+evalList []                    _   = return []
+evalList (Def id binding : es) env = do
+  eBind <- maybeTopLevelFunction id binding env
   evalList es (insert id eBind env)
+ where
+  maybeTopLevelFunction :: T.Text -> Exp -> Env -> Either EvalError Val
+  maybeTopLevelFunction expId b currEnv = case b of
+    Lambda ps body -> eval (App (Id "fix") [Lambda (expId : ps) body]) currEnv
+    _              -> eval b currEnv
 evalList (exp : es) env = do
   eExp  <- eval exp env
   eExps <- evalList es env
