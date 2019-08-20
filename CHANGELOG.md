@@ -1,5 +1,12 @@
 # Revision history for Pref
 
+## 0.3.2.1 -- 2019-08-20
+
+* Added recursive definitions
+* Fixed a bug where parser expected an unneccessary expression
+  at the end of a file
+
+
 ## 0.3.1.1 -- 2019-08-16
 
 * Parse Text instead of String
