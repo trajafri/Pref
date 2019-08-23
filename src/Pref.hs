@@ -12,6 +12,8 @@ where
 
 import           Control.Monad.Except --For throwError
 import           Control.Monad.Reader
+import           Control.Monad.State
+import           Data.List                     as L
 import           Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as TIO
@@ -53,7 +55,7 @@ instance Show Val where
   show E = "empty"
 
 defaultEnv :: Env
-defaultEnv = insert "empty" E M.empty
+defaultEnv = M.insert "empty" E M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`runReaderT` env) . evalM $ e
@@ -71,7 +73,7 @@ evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda curryin
 evalM (Lambda []         b) = asks (T b) -- Thunk case
 evalM (Let    [(v, val)] b) = do
   eValue <- evalM val
-  local (insert v eValue) $ evalM b -- Let base case
+  local (M.insert v eValue) $ evalM b -- Let base case
 evalM (Let ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
 evalM (If cond thn els      ) = do
   eCond <- evalM cond
@@ -118,7 +120,7 @@ evalM (App rator [rand]) = do
   case eRator of
     (C v b env) -> do
       eRand <- evalM rand
-      local (const $ insert v eRand env) $ evalM b
+      local (const $ M.insert v eRand env) $ evalM b
     _ ->
       throwError
         .  EvalError
@@ -163,19 +165,28 @@ evaluateStrOperation op base rands = do
     maybestrs
   return . S $ Prelude.foldr op base strs
 
-evalList :: [Exp] -> Env -> Either EvalError [Val]
-evalList []                    _   = return []
-evalList (Def id binding : es) env = do
-  eBind <- maybeTopLevelFunction id binding env
-  evalList es (insert id eBind env)
+evalList :: [Exp] -> [(T.Text, Exp)] -> Env -> Either EvalError [Val]
+evalList []                    _              _   = return []
+evalList (Def id binding : es) futureBindings env = do
+  let newFutures   = L.drop 1 futureBindings
+  let fixedBinding = topLevelFunction id newFutures binding
+  eBind <- eval fixedBinding env
+  evalList es newFutures $ M.insert id eBind env
  where
-  maybeTopLevelFunction :: T.Text -> Exp -> Env -> Either EvalError Val
-  maybeTopLevelFunction expId b currEnv = case b of
-    Lambda ps body -> eval (App (Id "fix") [Lambda (expId : ps) body]) currEnv
-    _              -> eval b currEnv
-evalList (exp : es) env = do
+  topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
+  topLevelFunction expId fb (Lambda ps body) = App
+    (Id "fix")
+    [Lambda (expId : ps) $ L.foldr (Let . return) body $ futureFunctions fb]
+  topLevelFunction _ _ b = b
+
+  futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]
+  futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
+    modify $ L.drop 1
+    currFutureBindings <- get
+    return (name, topLevelFunction name currFutureBindings func)
+evalList (exp : es) fb env = do
   eExp  <- eval exp env
-  eExps <- evalList es env
+  eExps <- evalList es fb env
   return $ eExp : eExps
 
 codeToAst :: T.Text -> Either ParseError [Exp]
@@ -183,10 +194,11 @@ codeToAst code = either throwError return $ runParser parse () "" code
 
 codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
 codeToVal code = case codeToAst code of
-  (Left  e  ) -> return . Left $ e
-  (Right ast) -> case evalList ast defaultEnv of
-    (Left  e   ) -> Left e
-    (Right vals) -> return . Right $ vals
+  Left  e   -> return . Left $ e
+  Right ast -> case evalList ast (futureBindings ast) defaultEnv of
+    Left  e    -> Left e
+    Right vals -> return . Right $ vals
+  where futureBindings ast = [ (i, b) | (Def i b) <- ast ]
 
 evaluatePref :: T.Text -> T.Text
 evaluatePref =
