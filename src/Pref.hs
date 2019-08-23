@@ -5,7 +5,6 @@ module Pref
   , codeToVal
   , eval
   , evaluatePref
-  , main
   , Val(..)
   )
 where
@@ -16,14 +15,12 @@ import           Control.Monad.State
 import           Data.List                     as L
 import           Data.Map                      as M
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                  as TIO
 import           Errors
 import           Syntax.Exp
 import           Parser
 import           Prelude                 hiding ( exp
                                                 , id
                                                 )
-import           System.IO
 import           Text.Parsec             hiding ( parse )
 
 type Env = Map T.Text Val
@@ -203,16 +200,3 @@ codeToVal code = case codeToAst code of
 evaluatePref :: T.Text -> T.Text
 evaluatePref =
   either (T.pack . show) (either (T.pack . show) (T.pack . show)) . codeToVal
-
-main :: IO ()
-main = do
-  TIO.putStrLn "Enter a file path: "
-  filePath <- TIO.getLine
-  withFile
-    (T.unpack filePath)
-    ReadMode
-    (\h -> do
-      fileContent <- TIO.hGetContents h
-      either (print . show) (either (print . show) $ mapM_ $ print . show)
-        $ codeToVal fileContent
-    )
