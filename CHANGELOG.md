@@ -1,5 +1,10 @@
 # Revision history for Pref
 
+## 0.3.4.0 -- 2019-08-24
+
+* Made Pref call-by-name (non-eager)
+
+
 ## 0.3.3.0 -- 2019-08-23
 
 * Added mutually recursive definitions
