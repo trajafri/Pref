@@ -13,8 +13,8 @@ import           Syntax.Exp
 import           Pref
 import           Test.HUnit
 
-defaultEnv :: Map T.Text Val
-defaultEnv = insert "empty" E empty
+defaultEnv :: Env
+defaultEnv = Env $ insert "empty" (Empty, Env empty) empty
 
 errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"
@@ -30,7 +30,7 @@ allTests =
     , ("\"a\""                      , S "a")
     , ("(lambda (x) 2)"             , C "x" (NLiteral 2) defaultEnv)
     , ("((lambda (x) 2) 3)"         , I 2)
-    , ("((lambda (x) 2) 3)"         , I 2)
+    , ("((lambda (x) x) 3)"         , I 3)
     , ("((lambda (x y z) z) 3 4 5)" , I 5)
     , ("(let ((x 1) (y 2) (z 3)) z)", I 3)
     , ("((lambda () 2))"            , I 2)
