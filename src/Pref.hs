@@ -104,9 +104,8 @@ evalM (App (Id "empty?") [ls]) = do
   return $ case eLs of
     E -> I 1
     _ -> I 0
-evalM (App (Id "fix") [func]) =
-  evalM (Lambda ["fixVar"] (App func [App (Id "fix") [func], Id "fixVar"])) -- Z Combinator
-evalM (App rator []) = do
+evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Combinator
+evalM (App rator      []    ) = do
   eRator <- evalM rator
   case eRator of
     (T b env) -> local (const env) $ evalM b
