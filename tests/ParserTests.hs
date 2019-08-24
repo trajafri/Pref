@@ -9,16 +9,16 @@ import           Data.Either
 import qualified Data.Text                     as T
 import           Syntax.Exp
 import           Pref
-import           Test.HUnit
+import           Test.Tasty
+import           Test.Tasty.HUnit
 
 expErrorMsg :: T.Text
 expErrorMsg = " converted to exp incorrectly."
 
-allExpTests :: [Test]
+allExpTests :: [Assertion]
 allExpTests =
-  [ TestCase $ assertEqual (show $ testCase <> expErrorMsg) ex $ codeToAst
-      testCase
-  | (testCase, ex) <-
+  [ assertEqual (show $ test <> expErrorMsg) ex $ codeToAst test
+  | (test, ex) <-
     [ ("a"                 , return [Id "a"])
     , ("(a)"               , return [App (Id "a") []])
     , ("(a a)"             , return [App (Id "a") [Id "a"]])
@@ -84,9 +84,9 @@ allExpTests =
 failureMsg :: T.Text
 failureMsg = " did not trigger an error"
 
-allFails :: [Test]
+allFails :: [Assertion]
 allFails =
-  [ TestCase $ assertBool (show $ f <> failureMsg) (isLeft $ codeToAst f)
+  [ assertBool (show $ f <> failureMsg) (isLeft $ codeToAst f)
   | f <-
     [ "("
     , ")"
@@ -101,12 +101,12 @@ allFails =
     ]
   ]
 
-parserTests :: Test
+parserTests :: TestTree
 parserTests =
-  TestList
-    $  [ TestLabel ("exp-test " ++ show i) t
+  testGroup "Parser tests"
+    $  [ testCase ("exp-test " ++ show i) t
        | (i, t) <- zip [1 :: Int, 2 ..] allExpTests
        ]
-    ++ [ TestLabel ("failure " ++ show i) f
+    ++ [ testCase ("failure " ++ show i) f
        | (i, f) <- zip [1 :: Int, 2 ..] allFails
        ]
