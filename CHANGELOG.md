@@ -1,5 +1,10 @@
 # Revision history for Pref
 
+## 0.3.4.1 -- 2019-08-30
+
+* Pref now parses signed integers
+
+
 ## 0.3.4.0 -- 2019-08-24
 
 * Made Pref call-by-name (non-eager)
