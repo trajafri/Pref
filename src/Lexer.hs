@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts, MultiWayIf #-}
 
 module Lexer
   ( decimal
@@ -39,6 +39,7 @@ parens p = do
 -- Parsers shamelessly copied from source
 number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer
 number base baseDigit = do
+
   digits <- many1 baseDigit
   let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
   seq n (return n)
@@ -210,11 +211,13 @@ ascii3 =
   , '\DEL'
   ]
 
+-- https://www.schoolofhaskell.com/school/to-infinity-and-beyond/pick-of-the-week/parsing-floats-with-parsec
 decimal :: Parsec T.Text () Integer
-decimal = try $ do
-  digits <- many1 (satisfy isDigit <?> "digit")
-  let n = foldl (\x d -> 10 * x + toInteger (digitToInt d)) 0 digits
-  seq n (return n)
+decimal =
+  try
+    $   (char '+' *> number 10 digit)
+    <|> (const negate <$> char '-' <*> number 10 digit)
+    <|> number 10 digit
 
 whiteSpace :: Parsec T.Text () ()
 whiteSpace =

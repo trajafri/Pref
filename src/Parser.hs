@@ -34,7 +34,7 @@ parse =
   failIfRight = string ")" >> unexpected "dangling right paren"
 
 expParser :: Parsec T.Text () Exp
-expParser = idParser <|> decimalParser <|> stringParser <|> parens
+expParser = decimalParser <|> stringParser <|> idParser <|> parens
   (lambdaParser <|> letParser <|> ifParser <|> appParser)
 
  where
