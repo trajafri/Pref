@@ -1,0 +1,13 @@
+(define plus
+  (lambda (n m)
+    (if (zero? n) (base n m) (rec n m))))
+
+(define base
+  (lambda (n m)
+    m))
+
+(define rec
+  (lambda (n m)
+    (+ 1 (plus (- n 1) m))))
+
+(plus 4 -9)

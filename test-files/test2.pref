@@ -1,6 +1,6 @@
 (define fact
   (lambda (f x) 
-   (if x (* x ((f f) (- x 1))) 1)))
+   (if (zero? x) 1 (* x ((f f) (- x 1))))))
 
 (fact fact 5)
 
