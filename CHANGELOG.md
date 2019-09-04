@@ -1,5 +1,12 @@
 # Revision history for Pref
 
+## 0.4.0.0 -- 2019-09-04
+
+* Pref now reads booleans
+* If now expects booleans instead of 0 for failure
+* Added `zero?`
+
+
 ## 0.3.4.1 -- 2019-08-30
 
 * Pref now parses signed integers
