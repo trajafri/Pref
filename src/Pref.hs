@@ -35,6 +35,7 @@ insertEnv k v e = Env $ M.insert k v $ getMap e
 data Val
   = S T.Text
   | I Int
+  | B Bool
   | C T.Text
       Exp
       Env
@@ -47,6 +48,7 @@ data Val
 instance Show Val where
   show (   S s     ) = T.unpack s
   show (   I i     ) = show i
+  show (   B b     ) = show b
   show (   C s _ _ ) = "<lambda:" <> T.unpack s <> ">"
   show (   T    _ _) = "<thunk>"
   show ls@(Cons _ _) = "(list"
@@ -67,6 +69,7 @@ evalM :: Exp -> ReaderT Env (Either EvalError) Val
 evalM Empty        = return $ E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
+evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
   env <- ask
   case M.lookup v $ getMap env of
@@ -80,8 +83,8 @@ evalM (Let    ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else
 evalM (If cond thn els         ) = do
   eCond <- evalM cond
   case eCond of
-    (I 0) -> evalM els
-    _     -> evalM thn -- If case
+    (B False) -> evalM els
+    _         -> evalM thn -- If case
 evalM (App (Id "+"            ) rands     ) = evaluateNumOperation (+) 0 rands
 evalM (App (Id "-"            ) rands     ) = evaluateNumOperation (-) 0 rands
 evalM (App (Id "*"            ) rands     ) = evaluateNumOperation (*) 1 rands

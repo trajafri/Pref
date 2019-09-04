@@ -37,9 +37,9 @@ allTests =
     , ("(string-append \"Hello\" \"World\")", S "HelloWorld")
     , ("(string-append \"Hello\" \" \" \"World\")", S "Hello World")
     , ("(define five 5) five"       , I 5)
-    , ("(fix (lambda (fact x) (if x (* x (fact (- x 1))) 1)) 5)", I 120)
+    , ("(fix (lambda (fact x) (if x 1 (* x (fact (- x 1))))) 5)", I 120)
     , ( "(fix (lambda (fib last curr n)\
-                          \ (if (- n 2) (fib curr (+ last curr) (- n 1)) curr)) 1 1 6)"
+                          \ (if (- n 2) curr (fib curr (+ last curr) (- n 1)))) 1 1 6)"
       , I 8
       )
     , ("(car (cons (+ 30 12) empty))"         , I 42)

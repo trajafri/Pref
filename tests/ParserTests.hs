@@ -84,6 +84,11 @@ allExpTests =
     , ("\"hello!\""      , return [SLiteral "hello!"])
     , ("\"hello world!\"", return [SLiteral "hello world!"])
     , ("-10"             , return [NLiteral (-10)])
+    , ("#f"              , return [BLiteral False])
+    , ("#t"              , return [BLiteral True])
+    , ( "(if #t #t #f)"
+      , return [If (BLiteral True) (BLiteral True) (BLiteral False)]
+      )
     ]
   ]
 
