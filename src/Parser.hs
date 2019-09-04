@@ -34,12 +34,16 @@ parse =
   failIfRight = string ")" >> unexpected "dangling right paren"
 
 expParser :: Parsec T.Text () Exp
-expParser = decimalParser <|> stringParser <|> idParser <|> parens
-  (lambdaParser <|> letParser <|> ifParser <|> appParser)
+expParser =
+  boolParser <|> decimalParser <|> stringParser <|> idParser <|> parens
+    (lambdaParser <|> letParser <|> ifParser <|> appParser)
 
  where
   idParser :: Parsec T.Text () Exp
   idParser = identifier >>= (return . Id)
+
+  boolParser :: Parsec T.Text () Exp
+  boolParser = bool >>= (return . BLiteral)
 
   decimalParser :: Parsec T.Text () Exp
   decimalParser = decimal >>= (return . NLiteral . fromIntegral)
