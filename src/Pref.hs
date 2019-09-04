@@ -85,10 +85,15 @@ evalM (If cond thn els         ) = do
   case eCond of
     (B False) -> evalM els
     _         -> evalM thn -- If case
-evalM (App (Id "+"            ) rands     ) = evaluateNumOperation (+) 0 rands
-evalM (App (Id "-"            ) rands     ) = evaluateNumOperation (-) 0 rands
-evalM (App (Id "*"            ) rands     ) = evaluateNumOperation (*) 1 rands
-evalM (App (Id "/"            ) rands     ) = evaluateNumOperation div 1 rands
+evalM (App (Id "+"    ) rands) = evaluateNumOperation (+) 0 rands
+evalM (App (Id "-"    ) rands) = evaluateNumOperation (-) 0 rands
+evalM (App (Id "*"    ) rands) = evaluateNumOperation (*) 1 rands
+evalM (App (Id "/"    ) rands) = evaluateNumOperation div 1 rands
+evalM (App (Id "zero?") [num]) = do
+  eNum <- evalM num
+  return $ case eNum of
+    I 0 -> B True
+    _   -> B False
 evalM (App (Id "string-append") rands     ) = evaluateStrOperation (<>) "" rands
 evalM (App (Id "cons"         ) [car, cdr]) = do
   eCar <- evalM car
@@ -107,8 +112,8 @@ evalM (App (Id "cdr") [cons]) = do
 evalM (App (Id "empty?") [ls]) = do
   eLs <- evalM ls
   return $ case eLs of
-    E -> I 1
-    _ -> I 0
+    E -> B True
+    _ -> B False
 evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Combinator
 evalM (App rator      []    ) = do
   eRator <- evalM rator
