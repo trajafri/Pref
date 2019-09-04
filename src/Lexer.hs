@@ -2,6 +2,7 @@
 
 module Lexer
   ( decimal
+  , bool
   , identifier
   , parens
   , stringLiteral
@@ -35,6 +36,12 @@ parens p = do
   res <- p
   _   <- char ')'
   return res
+
+bool :: Parsec T.Text () Bool
+bool = try $ do
+  _ <- char '#'
+  x <- char 'f' <|> char 't' <?> "bool litereal"
+  return $ if x == 't' then True else False
 
 -- Parsers shamelessly copied from source
 number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer

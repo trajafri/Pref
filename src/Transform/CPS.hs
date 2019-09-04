@@ -73,6 +73,7 @@ cpser i@(Id _)          = return i
 cpser e@Empty           = return e
 cpser n@(NLiteral _   ) = return n
 cpser s@(SLiteral _   ) = return s
+cpser b@(BLiteral _   ) = return b
 cpser (  Lambda vars b) = do
   modify $ updateVars vars
   cpsedBody <- cpsExp b
@@ -109,6 +110,7 @@ cpsExp i@(Id _)       = return $ App (Id "k") [i] -- apply k to value
 cpsExp e@Empty        = return $ App (Id "k") [e] -- apply k to value
 cpsExp n@(NLiteral _) = return $ App (Id "k") [n] -- apply k to value
 cpsExp s@(SLiteral _) = return $ App (Id "k") [s] -- apply k to value
+cpsExp b@(BLiteral _) = return $ App (Id "k") [b] -- apply k to value
 cpsExp l@(Lambda _ _) = do
   cpsedLambda <- cpser l
   return $ App (Id "k") [cpsedLambda] -- lambda's are simple, apply k!!
