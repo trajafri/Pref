@@ -1,5 +1,11 @@
 # Revision history for Pref
 
+## 0.4.1.0 -- 2020-02-23
+
+* Template Haskell support for Pref
+* Support for writing top level definitions and Haskell expressions use Pref
+* Add THExamples
+
 ## 0.4.0.0 -- 2019-09-04
 
 * Pref now reads booleans
