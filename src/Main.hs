@@ -17,7 +17,7 @@ prefParser = argument
 eval :: String -> IO ()
 eval sourcePath = do
   fileContent <- readFile sourcePath
-  maybeAst    <- return $ P.codeToVal (T.pack fileContent)
+  let maybeAst = P.codeToVal (T.pack fileContent)
   putStr $ either show (either show $ intercalate "\n" . map show) maybeAst
   putStrLn ""
 

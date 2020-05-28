@@ -149,7 +149,7 @@ type AppCPSer = State (Int, DList Exp, Collector) K
 type AppCPSerResult = (K, (Int, DList Exp, Collector))
 
 runAppCPSer :: Int -> DList Exp -> Collector -> AppCPSer -> AppCPSerResult
-runAppCPSer i ls c = flip runState $ (i, ls, c)
+runAppCPSer i ls c = flip runState (i, ls, c)
 
 getLastIndex :: AppCPSerResult -> Int
 getLastIndex = (\(a, _, _) -> a) . snd
@@ -167,15 +167,15 @@ thd (_, _, c) = c
     as shown in the example above -}
 cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
-  exps <- (\(_, a, _) -> a) <$> get
-  i    <- (\(a, _, _) -> a) <$> get
+  exps <- gets $ \(_, a, _) -> a
+  i    <- gets $ \(a, _, _) -> a
   let finalResult = "arg" <> (T.pack . show $ i)
   let e           = head exps
   let es          = toList . tail $ exps
   case e of
     Id x -> modify $ \(a, b, c) -> (a, b, collect (x, length es) c)
     _    -> return ()
-  collection <- thd <$> get
+  collection <- gets thd
   let adjustedE = getFixedExp e collection
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
@@ -187,12 +187,12 @@ cpsApp [] = do
 -- In this case, we cps the application with a new AppCPSer, and construct the whole
 -- expression using its final values
 cpsApp (App rator rands : exs) = do
-  vars <- (\(_, b, _) -> b) <$> get
-  modify $ \(a, b, c) -> (a, const empty b, c) -- This is because we want to start with a fresh list
+  vars <- gets $ \(_, b, _) -> b
+  modify $ \(a, _, c) -> (a, empty, c) -- This is because we want to start with a fresh list
   currExpCont <- cpsApp (rator : rands) -- CPS the application, and get the cont function
-  modify $ \(a, b, c) -> (a, const vars b, c)
-  i <- (\(a, _, _) -> a) <$> get
-  modify $ \(a, b, c) -> (a, flip snoc (Id ("arg" <> (T.pack . show $ i))) b, c) -- This is the result of the whole application
+  modify $ \(a, _, c) -> (a, vars, c)
+  i <- gets $ \(a, _, _) -> a
+  modify $ \(a, b, c) -> (a, snoc b (Id ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
   modify $ \(a, b, c) -> ((const $ succ i) a, b, c) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
@@ -200,11 +200,11 @@ cpsApp (App rator rands : exs) = do
   return $ currExpCont . nextExps
 {- result of nextExps becomes the body of the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  collection <- thd <$> get
+  collection <- gets thd
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
   modify $ \(a, b, _) -> (a, b, updatedCollection)
-  modify $ \(a, b, c) -> (a, flip snoc cpsedSimpleExp b, c)-- The result is the expression cpsed
+  modify $ \(a, b, c) -> (a, snoc b cpsedSimpleExp, c)-- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> State Collector Exp

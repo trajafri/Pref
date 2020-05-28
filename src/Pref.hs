@@ -68,7 +68,7 @@ eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`evalStateT` env) . evalM $ e
 
 evalM :: Exp -> StateT Env (Either EvalError) Val
-evalM Empty        = return $ E -- EmptyList 
+evalM Empty        = return E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
@@ -80,9 +80,9 @@ evalM (Id       v) = do
       modify (const localEnv)
         >>  evalM exp
         >>= (\ret -> modify (const env) >> return ret) -- Variable
-evalM (Lambda [v     ] b) = (C v b) <$> get -- Lambda base case
+evalM (Lambda [v     ] b) = gets (C v b) -- Lambda base case
 evalM (Lambda (v : vs) b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []       b) = (T b) <$> get -- Thunk case
+evalM (Lambda []       b) = gets (T b) -- Thunk case
 evalM (Let [(v, val)] b) =
   modify (\env -> insertEnv v (val, env) env)
     >>  evalM b
@@ -142,7 +142,7 @@ evalM (App rator [rand]) = do
   eRator <- evalM rator
   env    <- get
   case eRator of
-    (C v b localEnv) -> do
+    (C v b localEnv) ->
       modify (const $ insertEnv v (rand, env) localEnv)
         >>  evalM b
         >>= (\ret -> modify (const env) >> return ret)
