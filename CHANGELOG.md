@@ -20,7 +20,7 @@
 
 ## 0.3.4.0 -- 2019-08-24
 
-* Made Pref call-by-name (non-eager)
+* Made Pref call-by-need (non-eager)
 
 
 ## 0.3.3.0 -- 2019-08-23
