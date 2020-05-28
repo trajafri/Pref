@@ -41,7 +41,7 @@ bool :: Parsec T.Text () Bool
 bool = try $ do
   _ <- char '#'
   x <- char 'f' <|> char 't' <?> "bool litereal"
-  return $ if x == 't' then True else False
+  return $ x == 't'
 
 -- Parsers shamelessly copied from source
 number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer
@@ -223,7 +223,7 @@ decimal :: Parsec T.Text () Integer
 decimal =
   try
     $   (char '+' *> number 10 digit)
-    <|> (const negate <$> char '-' <*> number 10 digit)
+    <|> (negate <$ char '-' <*> number 10 digit)
     <|> number 10 digit
 
 whiteSpace :: Parsec T.Text () ()
