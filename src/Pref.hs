@@ -12,7 +12,6 @@ module Pref
 where
 
 import           Control.Monad.Except --For throwError
-import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.List                     as L
 import           Data.Map                      as M
@@ -31,6 +30,9 @@ newtype Env = Env {getMap :: Map T.Text (Exp, Env)} deriving (Eq, Show)
 
 insertEnv :: T.Text -> (Exp, Env) -> Env -> Env
 insertEnv k v e = Env $ M.insert k v $ getMap e
+
+removeEnv :: T.Text -> Env -> Env
+removeEnv k = Env . M.delete k . getMap
 
 data Val
   = S T.Text
@@ -63,24 +65,30 @@ defaultEnv :: Env
 defaultEnv = insertEnv "empty" (Empty, Env M.empty) $ Env M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
-eval e env = (`runReaderT` env) . evalM $ e
+eval e env = (`evalStateT` env) . evalM $ e
 
-evalM :: Exp -> ReaderT Env (Either EvalError) Val
+evalM :: Exp -> StateT Env (Either EvalError) Val
 evalM Empty        = return $ E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
-  env <- ask
+  env <- get
   case M.lookup v $ getMap env of
-    Nothing              -> throwError . EvalError $ "Can not identify " <> v
-    Just (exp, localEnv) -> local (const localEnv) $ evalM exp -- Variable
-evalM (Lambda [v     ]        b) = asks (C v b) -- Lambda base case
-evalM (Lambda (v : vs)        b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []              b) = asks (T b) -- Thunk case
-evalM (Let [(v, val)] b) = local (\env -> insertEnv v (val, env) env) $ evalM b -- Let base case
-evalM (Let    ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
-evalM (If cond thn els         ) = do
+    Nothing -> throwError . EvalError $ "Can not identify " <> v
+    Just (exp, localEnv) ->
+      modify (const localEnv)
+        >>  evalM exp
+        >>= (\ret -> modify (const env) >> return ret) -- Variable
+evalM (Lambda [v     ] b) = (C v b) <$> get -- Lambda base case
+evalM (Lambda (v : vs) b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
+evalM (Lambda []       b) = (T b) <$> get -- Thunk case
+evalM (Let [(v, val)] b) =
+  modify (\env -> insertEnv v (val, env) env)
+    >>  evalM b
+    >>= (\ret -> modify (removeEnv v) >> return ret) -- Let base case
+evalM (Let ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
+evalM (If cond thn els      ) = do
   eCond <- evalM cond
   case eCond of
     (B False) -> evalM els
@@ -118,7 +126,13 @@ evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Co
 evalM (App rator      []    ) = do
   eRator <- evalM rator
   case eRator of
-    (T b env) -> local (const env) $ evalM b
+    (T b env) ->
+      get
+        >>= (\oEnv ->
+              modify (const env)
+                >>  evalM b
+                >>= (\ret -> modify (const oEnv) >> return ret)
+            )
     _ ->
       throwError
         .  EvalError
@@ -126,10 +140,12 @@ evalM (App rator      []    ) = do
         <> (T.pack . show $ eRator)
 evalM (App rator [rand]) = do
   eRator <- evalM rator
-  env    <- ask
+  env    <- get
   case eRator of
     (C v b localEnv) -> do
-      local (const $ insertEnv v (rand, env) localEnv) $ evalM b
+      modify (const $ insertEnv v (rand, env) localEnv)
+        >>  evalM b
+        >>= (\ret -> modify (const env) >> return ret)
     _ ->
       throwError
         .  EvalError
@@ -140,17 +156,17 @@ evalM e =
   throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
 evaluateNumOperation
-  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either EvalError) Val
+  :: (Int -> Int -> Int) -> Int -> [Exp] -> StateT Env (Either EvalError) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
     (\case
       (I i) -> return i
-      _ ->
+      e ->
         throwError
           .  EvalError
-          $  " got a non numeric argument in the following operands:\n"
-          <> (T.pack . show $ rands)
+          $  " got a non numeric argument in the following operand:\n"
+          <> (T.pack . show $ e)
     )
     maybenums
   return . I $ Prelude.foldr op base nums
@@ -159,7 +175,7 @@ evaluateStrOperation
   :: (T.Text -> T.Text -> T.Text)
   -> T.Text
   -> [Exp]
-  -> ReaderT Env (Either EvalError) Val
+  -> StateT Env (Either EvalError) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
