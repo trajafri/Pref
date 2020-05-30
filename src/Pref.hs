@@ -8,6 +8,7 @@ module Pref
   , evaluatePref
   , Env(..)
   , Val(..)
+  , Box(..)
   )
 where
 
@@ -26,13 +27,18 @@ import           Text.Parsec             hiding ( Empty
                                                 , parse
                                                 )
 
-newtype Env = Env {getMap :: Map T.Text Val} deriving (Eq, Show)
+newtype Env = Env {getMap :: Map T.Text Box} deriving (Eq, Show)
 
-insertEnv :: T.Text -> Val -> Env -> Env
+data Box = Thunk {getExp :: Exp, getEnv :: Env} | Val {getVal :: Val} deriving (Eq, Show)
+
+insertEnv :: T.Text -> Box -> Env -> Env
 insertEnv k v e = Env $ M.insert k v $ getMap e
 
 removeEnv :: T.Text -> Env -> Env
 removeEnv k = Env . M.delete k . getMap
+
+updateEnv :: T.Text -> Val -> Env -> Env
+updateEnv k v = Env . M.adjust (const . Val $ v) k . getMap
 
 data Val
   = S T.Text
@@ -62,7 +68,7 @@ instance Show Val where
   show E = "empty"
 
 defaultEnv :: Env
-defaultEnv = insertEnv "empty" E $ Env M.empty
+defaultEnv = insertEnv "empty" (Val E) $ Env M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`evalStateT` env) . evalM $ e
@@ -75,14 +81,15 @@ evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
   env <- get
   case M.lookup v $ getMap env of
-    Nothing  -> throwError . EvalError $ "Can not identify " <> v
-    Just exp -> return exp -- Variable
+    Nothing                 -> throwError . EvalError $ "Can not identify " <> v
+    Just (Thunk exp expEnv) -> undefined
+    Just (Val val         ) -> return val -- Variable
 evalM (Lambda [v     ]   b) = gets (C v b) -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
 evalM (Lambda []         b) = gets (T b) -- Thunk case
 evalM (Let    [(v, val)] b) = do
-  e <- evalM val
-  modify (insertEnv v e)
+  vVal <- evalM val
+  modify (insertEnv v (Val vVal))
   ret <- evalM b
   modify (removeEnv v)
   return ret -- Let base case
@@ -146,8 +153,8 @@ evalM (App rator [rand]) = do
   env    <- get
   case eRator of
     (C v b localEnv) -> do
-      nRand <- evalM rand
-      modify (const $ insertEnv v nRand localEnv)
+      randVal <- evalM rand
+      modify (const $ insertEnv v (Val randVal) localEnv)
       ret <- evalM b
       modify (const env)
       return ret
@@ -201,7 +208,7 @@ evalList (Def id binding : es) futureBindings env = do
   let newFutures   = L.drop 1 futureBindings
   let fixedBinding = topLevelFunction id newFutures binding
   val <- eval fixedBinding env
-  evalList es newFutures $ insertEnv id val env
+  evalList es newFutures $ insertEnv id (Val val) env
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
   topLevelFunction expId fb (Lambda ps body) = App
