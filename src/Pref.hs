@@ -26,9 +26,9 @@ import           Text.Parsec             hiding ( Empty
                                                 , parse
                                                 )
 
-newtype Env = Env {getMap :: Map T.Text (Exp, Env)} deriving (Eq, Show)
+newtype Env = Env {getMap :: Map T.Text Val} deriving (Eq, Show)
 
-insertEnv :: T.Text -> (Exp, Env) -> Env -> Env
+insertEnv :: T.Text -> Val -> Env -> Env
 insertEnv k v e = Env $ M.insert k v $ getMap e
 
 removeEnv :: T.Text -> Env -> Env
@@ -62,7 +62,7 @@ instance Show Val where
   show E = "empty"
 
 defaultEnv :: Env
-defaultEnv = insertEnv "empty" (Empty, Env M.empty) $ Env M.empty
+defaultEnv = insertEnv "empty" E $ Env M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`evalStateT` env) . evalM $ e
@@ -75,18 +75,17 @@ evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
   env <- get
   case M.lookup v $ getMap env of
-    Nothing -> throwError . EvalError $ "Can not identify " <> v
-    Just (exp, localEnv) ->
-      modify (const localEnv)
-        >>  evalM exp
-        >>= (\ret -> modify (const env) >> return ret) -- Variable
-evalM (Lambda [v     ] b) = gets (C v b) -- Lambda base case
-evalM (Lambda (v : vs) b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []       b) = gets (T b) -- Thunk case
-evalM (Let [(v, val)] b) =
-  modify (\env -> insertEnv v (val, env) env)
-    >>  evalM b
-    >>= (\ret -> modify (removeEnv v) >> return ret) -- Let base case
+    Nothing  -> throwError . EvalError $ "Can not identify " <> v
+    Just exp -> return exp -- Variable
+evalM (Lambda [v     ]   b) = gets (C v b) -- Lambda base case
+evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
+evalM (Lambda []         b) = gets (T b) -- Thunk case
+evalM (Let    [(v, val)] b) = do
+  e <- evalM val
+  modify (insertEnv v e)
+  ret <- evalM b
+  modify (removeEnv v)
+  return ret -- Let base case
 evalM (Let ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
 evalM (If cond thn els      ) = do
   eCond <- evalM cond
@@ -122,8 +121,12 @@ evalM (App (Id "empty?") [ls]) = do
   return $ case eLs of
     E -> B True
     _ -> B False
-evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Combinator
-evalM (App rator      []    ) = do
+evalM (App (Id "fix") [func]) = case func of
+  Lambda (a : _) _ ->
+    evalM $ Lambda [a] $ App func [App (Id "fix") [func], Id a] -- Z Combinator
+  Lambda _ _ -> throwError . EvalError $ "fix expects a function, not a thunk"
+  _          -> throwError . EvalError $ "fix expects a function"
+evalM (App rator []) = do
   eRator <- evalM rator
   case eRator of
     (T b env) ->
@@ -142,10 +145,12 @@ evalM (App rator [rand]) = do
   eRator <- evalM rator
   env    <- get
   case eRator of
-    (C v b localEnv) ->
-      modify (const $ insertEnv v (rand, env) localEnv)
-        >>  evalM b
-        >>= (\ret -> modify (const env) >> return ret)
+    (C v b localEnv) -> do
+      nRand <- evalM rand
+      modify (const $ insertEnv v nRand localEnv)
+      ret <- evalM b
+      modify (const env)
+      return ret
     _ ->
       throwError
         .  EvalError
@@ -195,7 +200,8 @@ evalList []                    _              _   = return []
 evalList (Def id binding : es) futureBindings env = do
   let newFutures   = L.drop 1 futureBindings
   let fixedBinding = topLevelFunction id newFutures binding
-  evalList es newFutures $ insertEnv id (fixedBinding, env) env
+  val <- eval fixedBinding env
+  evalList es newFutures $ insertEnv id val env
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
   topLevelFunction expId fb (Lambda ps body) = App
