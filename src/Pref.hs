@@ -27,18 +27,20 @@ import           Text.Parsec             hiding ( Empty
                                                 , parse
                                                 )
 
-newtype Env = Env {getMap :: Map T.Text Box} deriving (Eq, Show)
+data Env = Env {getMap :: Map T.Text Box, getCount :: Int} deriving (Eq, Show)
 
-data Box = Thunk {getExp :: Exp, getEnv :: Env} | Val {getVal :: Val} deriving (Eq, Show)
+data Box = Thunk {getExp :: Exp}
+         | Val {getVal :: Val}
+  deriving (Eq, Show)
 
 insertEnv :: T.Text -> Box -> Env -> Env
-insertEnv k v e = Env $ M.insert k v $ getMap e
+insertEnv k b (Env m i) = flip Env (succ i) $ M.insert k b m
 
 removeEnv :: T.Text -> Env -> Env
-removeEnv k = Env . M.delete k . getMap
+removeEnv k (Env m i) = (flip Env i) . M.delete k $ m
 
 updateEnv :: T.Text -> Val -> Env -> Env
-updateEnv k v = Env . M.adjust (const . Val $ v) k . getMap
+updateEnv k v (Env m i) = (flip Env i) . M.adjust (const . Val $ v) k $ m
 
 data Val
   = S T.Text
@@ -68,7 +70,7 @@ instance Show Val where
   show E = "empty"
 
 defaultEnv :: Env
-defaultEnv = insertEnv "empty" (Val E) $ Env M.empty
+defaultEnv = insertEnv "empty" (Val E) $ Env M.empty 0
 
 eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`evalStateT` env) . evalM $ e
@@ -81,9 +83,9 @@ evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
   env <- get
   case M.lookup v $ getMap env of
-    Nothing                 -> throwError . EvalError $ "Can not identify " <> v
-    Just (Thunk exp expEnv) -> undefined
-    Just (Val val         ) -> return val -- Variable
+    Nothing          -> throwError . EvalError $ "Can not identify " <> v
+    Just (Thunk exp) -> undefined
+    Just (Val   val) -> return val -- Variable
 evalM (Lambda [v     ]   b) = gets (C v b) -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
 evalM (Lambda []         b) = gets (T b) -- Thunk case
