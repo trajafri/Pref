@@ -15,7 +15,7 @@ import           Test.Tasty
 import           Test.Tasty.HUnit
 
 defaultEnv :: Env
-defaultEnv = Env $ insert "empty" (Val E) empty
+defaultEnv = flip Env 1 $ insert "empty" (Val E) empty
 
 errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"

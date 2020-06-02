@@ -4,4 +4,4 @@
 
 (define x 3)
 
-(lambda (z) (let ([z (+ 3 x)]) x))
+(lambda (z) (let ([z (+ 3 x)]) z))

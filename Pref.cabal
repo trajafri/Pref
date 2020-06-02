@@ -11,7 +11,8 @@ library
   hs-source-dirs:      src
   exposed-modules:     Pref,
                        Syntax.Exp,
-                       TH,
+                       TH, 
+                       Transform.Uniquify,
                        Transform.CPS
   other-modules:       Example.THExample
                        Errors ,

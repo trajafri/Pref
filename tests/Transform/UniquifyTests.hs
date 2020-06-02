@@ -7,6 +7,7 @@ where
 
 import           Control.Monad
 import           Control.Monad.State
+import           Control.Monad.Reader
 import           Data.Map                      as M
 import qualified Data.Text                     as T
 import           Pref
@@ -33,15 +34,26 @@ uniquifyTest = do
         (takeBaseName f)
         (readFile . flip replaceExtension ".out" $ f)
         (readFile f)
-        (\input output -> either
+        (\expO input -> either
           (return . Just)
           (const . return $ Nothing)
           (do
             inAst <- leftToString . codeToAst . T.pack $ input
-            let uniqued = flip evalState M.empty $ uniquifyProgram inAst
-            outAst <- leftToString . codeToAst . T.pack $ output
-            when (uniqued /= outAst)
-                 (Left $ "equality failed for " <> input <> " " <> output)
+            let uniqued =
+                  flip runReader M.empty
+                    . flip evalStateT M.empty
+                    $ uniquifyProgram inAst M.empty
+            expAst <- leftToString . codeToAst . T.pack $ expO
+            when
+              (uniqued /= expAst)
+              (  Left
+              $  "equality failed for:\n"
+              <> input
+              <> "\nExpected:\n"
+              <> expO
+              <> "\nGot:\n"
+              <> (show uniqued)
+              )
           )
         )
         (const . return $ ())

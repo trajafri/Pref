@@ -1,4 +1,4 @@
-(dfine x.0 (lambda (x.1) (let ([x.2 (+ 3 x.1)]) x.2)))
+(define x.0 (lambda (x.1) (let ([x.2 (+ 3 x.1)]) x.2)))
 
 (define y.0 (lambda (x.3) (let ([x.4 (+ 3 x.3)]) z.-1)))
 
