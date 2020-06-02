@@ -6,9 +6,10 @@ import           Test.Tasty
 
 tests :: IO TestTree
 tests = do
-  unqTest <- uniquifyTest
+  uniquifyTests <- uniquifyTest
+  interpTests   <- interpTestList
   return $ testGroup "Pref tests"
-                     [parserTests, interpTestList, cpserTestList, unqTest]
+                     [parserTests, interpTests, cpserTestList, uniquifyTests]
 
 main :: IO ()
 main = tests >>= defaultMain

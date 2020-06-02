@@ -5,6 +5,7 @@ module InterpTests
   )
 where
 
+import           Control.Monad
 import           Data.Either
 import           Data.Map                      as M
 import qualified Data.Text                     as T
@@ -13,6 +14,14 @@ import           Syntax.Exp
 import           Pref
 import           Test.Tasty
 import           Test.Tasty.HUnit
+import           Test.Tasty.Golden
+import           Test.Tasty.Golden.Advanced
+import           System.FilePath                ( takeBaseName
+                                                , replaceExtension
+                                                )
+
+location :: String
+location = "tests/test-files"
 
 defaultEnv :: Env
 defaultEnv = flip Env 1 $ insert "empty" (Val E) empty
@@ -50,9 +59,42 @@ allTests =
     ]
   ]
 
-interpTestList :: TestTree
-interpTestList = testGroup
-  "Interpreter tests"
-  [ testCase ("test " ++ show i) t
-  | (i, t) <- zip ([1, 2 ..] :: [Int]) allTests
-  ]
+
+
+interpTestList :: IO TestTree
+interpTestList = do
+  testFiles <- findByExtension [".pref"] location
+  return
+    $  testGroup "Interpreter Tests"
+    $  [ testCase ("test " ++ show i) t
+       | (i, t) <- zip ([1, 2 ..] :: [Int]) allTests
+       ]
+    <> [ goldenTest
+           (takeBaseName f)
+           (readFile . flip replaceExtension ".out" $ f)
+           (readFile f)
+           (\expO input -> either
+             (return . Just)
+             (const . return $ Nothing)
+             (do
+               inVal  <- leftsToString . codeToVal . T.pack $ input
+               expVal <- leftsToString . codeToVal . T.pack $ expO
+               when
+                 (inVal /= expVal)
+                 (  Left
+                 $  input
+                 <> (T.unpack errorMsg)
+                 <> "\nExpected:\n"
+                 <> (show expVal)
+                 <> "\nGot:\n"
+                 <> (show inVal)
+                 )
+             )
+           )
+           (const . return $ ())
+       | f <- testFiles
+       ]
+ where
+  leftsToString (Left  eerr      ) = Left . show $ eerr
+  leftsToString (Right (Left  pe)) = Left . show $ pe
+  leftsToString (Right (Right v )) = Right v
