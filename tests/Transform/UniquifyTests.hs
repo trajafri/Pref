@@ -22,9 +22,6 @@ import           System.FilePath                ( takeBaseName
 location :: String
 location = "tests/Transform/uniquify-tests"
 
-errorMsg :: T.Text
-errorMsg = " uniquified incorrectly"
-
 uniquifyTest :: IO TestTree
 uniquifyTest = do
   testFiles <- findByExtension [".in"] location
