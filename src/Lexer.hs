@@ -34,9 +34,9 @@ identifier = try $ do
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
 parens p = do
-  _   <- char '('
+  c   <- char '(' <|> char '{' <|> char '['
   res <- p
-  _   <- char ')'
+  _   <- char (if c == '(' then ')' else if c == '{' then '}' else ']')
   return res
 
 bool :: Parsec T.Text () Bool
