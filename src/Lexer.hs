@@ -28,7 +28,9 @@ import           Text.Parsec
 identifier :: Parsec T.Text () T.Text
 identifier = try $ do
   idName@(idC : ids) <- many1 (alphaNum <|> satisfy validIdChar)
-  if isDigit idC && all isDigit ids then mzero else return $ T.pack idName
+  if (isDigit idC || idC == '.') && all isDigit ids
+    then mzero
+    else return $ T.pack idName
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
 parens p = do
@@ -269,7 +271,6 @@ validIdChar c = all
   , ('(' /=)
   , ('\"' /=)
   , ('\'' /=)
-  , ('.' /=)
   , (',' /=)
   , ('[' /=)
   , (']' /=)
