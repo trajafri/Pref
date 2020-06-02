@@ -1,0 +1,7 @@
+(define x.0 (lambda (x.1) (let ([x.2 (+ 3 x.1)]) x.2)))
+
+(define y.0 (lambda (x.3) (let ([x.4 (+ 3 x.3)]) x.4)))
+
+(define x.5 3)
+
+(lambda (x.6) (let ([x.7 (+ 3 x.6)]) x.7))
