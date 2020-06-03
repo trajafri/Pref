@@ -81,8 +81,10 @@ On \*nix systems, checkout [ghcup](https://www.haskell.org/ghcup/) to install bo
 
 With `cabal-install` installed, you can execute the following commands to evaluate a Pref program:
 
-```> cabal build all
-> cabal exec pref *path*```
+```
+> cabal build all
+> cabal exec pref *path*
+```
 
 where *path* points to a file containing a Pref program
 
