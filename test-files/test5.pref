@@ -1,5 +1,0 @@
-(define plus
-  (lambda (n m)
-    (if (zero? n) m (+ 1 (plus (- n 1) m)))))
-
-(plus 2 1)
