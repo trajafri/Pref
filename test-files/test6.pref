@@ -1,7 +1,0 @@
-(define fib 
-  (lambda (n)
-    (if (zero? n)
-        1
-        (if (zero? (- n 1)) 1 (+ (fib (- n 1)) (fib (- n 2)))))))
-
-(fib     5)

@@ -1,4 +1,0 @@
-((lambda (f x) 
-   (if (zero? x) 1 (* x ((f f) (- x 1))))) 
- (lambda (f x) 
-   (if (zero? x) 1 (* x ((f f) (- x 1))))) 5)
