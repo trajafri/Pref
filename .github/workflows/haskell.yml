@@ -37,4 +37,4 @@ jobs:
     - name: Build
       run: cabal new-build --enable-tests --enable-benchmarks all
     - name: Run tests
-      run: cabal new-test all
+      run: cabal new-test --test-show-details='always' --test-options=--color='always' all
