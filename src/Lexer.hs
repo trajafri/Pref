@@ -29,7 +29,7 @@ identifier :: Parsec T.Text () T.Text
 identifier = try $ do
   idName@(idC : ids) <- many1 (alphaNum <|> satisfy validIdChar)
   if (isDigit idC || idC == '.') && all isDigit ids
-    then mzero
+    then unexpected "numeric value or a period as an identifier"
     else return $ T.pack idName
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
