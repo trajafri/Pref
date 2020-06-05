@@ -213,6 +213,18 @@ evalList (Def id binding : es) futureBindings env = do
   evalList es newFutures $ insertEnv id (Val val) env
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
+  topLevelFunction expId fb (Lambda [] body) =
+    App
+        (App
+          (Id "fix")
+          [ Lambda [expId, "_"] -- Todo: Should be a non-colliding variable
+            . Lambda []
+            $ L.foldr (Let . return)
+                      (Let [(expId, App (Id expId) [Id "_"])] body)
+            $ futureFunctions fb
+          ]
+        )
+      $ [NLiteral 0]
   topLevelFunction expId fb (Lambda ps body) = App
     (Id "fix")
     [Lambda (expId : ps) $ L.foldr (Let . return) body $ futureFunctions fb]
