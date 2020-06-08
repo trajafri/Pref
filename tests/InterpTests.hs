@@ -7,7 +7,6 @@ where
 
 import           Control.Monad
 import           Data.Either
-import           Data.Map                      as M
 import qualified Data.Text                     as T
                                          hiding ( zip )
 import           Syntax.Exp
@@ -22,9 +21,6 @@ import           System.FilePath                ( takeBaseName
 
 location :: String
 location = "tests/test-files"
-
-defaultEnv :: Env
-defaultEnv = Env . insert "empty" E $ empty
 
 errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"
