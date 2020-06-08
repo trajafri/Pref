@@ -14,6 +14,7 @@ where
 
 import           Control.Monad.Except --For throwError
 import           Control.Monad.State
+import           Control.Monad.Reader
 import           Data.List                     as L
 import           Data.Map                      as M
 import qualified Data.Text                     as T
@@ -27,20 +28,22 @@ import           Text.Parsec             hiding ( Empty
                                                 , parse
                                                 )
 
-data Env = Env {getMap :: Map T.Text Box, getCount :: Int} deriving (Eq, Show)
+data Env = Env {getMap :: Map T.Text Val} deriving (Eq, Show)
+
+data Mem a = Mem {mem :: Map Int a, getCount :: Int}
 
 data Box = Thunk {getExp :: Exp}
          | Val {getVal :: Val}
   deriving (Eq, Show)
 
-insertEnv :: T.Text -> Box -> Env -> Env
-insertEnv k b (Env m i) = flip Env (succ i) $ M.insert k b m
+insertEnv :: T.Text -> Val -> Env -> Env
+insertEnv k b = Env . M.insert k b . getMap
 
-removeEnv :: T.Text -> Env -> Env
-removeEnv k (Env m i) = (flip Env i) . M.delete k $ m
-
-updateEnv :: T.Text -> Val -> Env -> Env
-updateEnv k v (Env m i) = (flip Env i) . M.adjust (const . Val $ v) k $ m
+-- removeEnv :: T.Text -> Env -> Env
+-- removeEnv k (Env m i) = (flip Env i) . M.delete k $ m
+-- 
+-- updateEnv :: T.Text -> Val -> Env -> Env
+-- updateEnv k v (Env m i) = (flip Env i) . M.adjust (const . Val $ v) k $ m
 
 data Val
   = S T.Text
@@ -67,34 +70,31 @@ instance Show Val where
     contents (Cons a b) = show a : contents b
     contents E          = []
     contents a          = [show a]
-  show E = "empty"
+  show E      = "empty"
+  show (Bx _) = "<box>"
 
 defaultEnv :: Env
-defaultEnv = insertEnv "empty" (Val E) $ Env M.empty 0
+defaultEnv = insertEnv "empty" E . Env $ M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
-eval e env = (`evalStateT` env) . evalM $ e
+eval e env = (`runReaderT` env) . (`evalStateT` ()) . evalM $ e
 
-evalM :: Exp -> StateT Env (Either EvalError) Val
+evalM :: Exp -> StateT () (ReaderT Env (Either EvalError)) Val
 evalM Empty        = return E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
-  env <- get
+  env <- ask
   case M.lookup v $ getMap env of
-    Nothing          -> throwError . EvalError $ "Can not identify " <> v
-    Just (Thunk exp) -> undefined
-    Just (Val   val) -> return val -- Variable
-evalM (Lambda [v     ]   b) = gets (C v b) -- Lambda base case
+    Nothing  -> throwError . EvalError $ "Can not identify " <> v
+    Just val -> return val -- Variable
+evalM (Lambda [v     ]   b) = asks (C v b) -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []         b) = gets (T b) -- Thunk case
+evalM (Lambda []         b) = asks (T b) -- Thunk case
 evalM (Let    [(v, val)] b) = do
   vVal <- evalM val
-  modify (insertEnv v (Val vVal))
-  ret <- evalM b
-  modify (removeEnv v)
-  return ret -- Let base case
+  local (insertEnv v vVal) $ evalM b -- Let base case
 evalM (Let ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
 evalM (If cond thn els      ) = do
   eCond <- evalM cond
@@ -138,13 +138,7 @@ evalM (App (Id "fix") [func]) = case func of
 evalM (App rator []) = do
   eRator <- evalM rator
   case eRator of
-    (T b env) ->
-      get
-        >>= (\oEnv ->
-              modify (const env)
-                >>  evalM b
-                >>= (\ret -> modify (const oEnv) >> return ret)
-            )
+    (T b env) -> local (const env) $ evalM b
     _ ->
       throwError
         .  EvalError
@@ -152,14 +146,10 @@ evalM (App rator []) = do
         <> (T.pack . show $ eRator)
 evalM (App rator [rand]) = do
   eRator <- evalM rator
-  env    <- get
   case eRator of
-    (C v b localEnv) -> do
+    (C v b env) -> do
       randVal <- evalM rand
-      modify (const $ insertEnv v (Val randVal) localEnv)
-      ret <- evalM b
-      modify (const env)
-      return ret
+      local (const $ insertEnv v randVal env) $ evalM b
     _ ->
       throwError
         .  EvalError
@@ -170,7 +160,10 @@ evalM e =
   throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
 evaluateNumOperation
-  :: (Int -> Int -> Int) -> Int -> [Exp] -> StateT Env (Either EvalError) Val
+  :: (Int -> Int -> Int)
+  -> Int
+  -> [Exp]
+  -> StateT () (ReaderT Env (Either EvalError)) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
@@ -189,7 +182,7 @@ evaluateStrOperation
   :: (T.Text -> T.Text -> T.Text)
   -> T.Text
   -> [Exp]
-  -> StateT Env (Either EvalError) Val
+  -> StateT () (ReaderT Env (Either EvalError)) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
@@ -210,7 +203,7 @@ evalList (Def id binding : es) futureBindings env = do
   let newFutures   = L.drop 1 futureBindings
   let fixedBinding = topLevelFunction id newFutures binding
   val <- eval fixedBinding env
-  evalList es newFutures $ insertEnv id (Val val) env
+  evalList es newFutures $ insertEnv id val env
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
   topLevelFunction expId fb (Lambda [] body) =
