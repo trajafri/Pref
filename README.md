@@ -7,7 +7,7 @@
 
 ## Features
 
-**Pref** is an eager, lisp-like programming language with the following features:
+**Pref** is a lazy, lisp-like programming language with the following features:
 
 * Higher Order Functions
 * S-Expressions
