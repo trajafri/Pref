@@ -56,6 +56,7 @@ data Val
   | Cons Val
          Val
   | E --Empty
+  | Bx Int -- Memory reference
   deriving (Eq)
 
 instance Show Val where
