@@ -24,7 +24,7 @@ location :: String
 location = "tests/test-files"
 
 defaultEnv :: Env
-defaultEnv = flip Env 1 $ insert "empty" (Val E) empty
+defaultEnv = Env . insert "empty" E $ empty
 
 errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"
