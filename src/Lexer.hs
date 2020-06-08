@@ -10,7 +10,6 @@ module Lexer
   )
 where
 
-import           Control.Monad.Identity
 import           Data.Char
 import           Data.List                      ( nub )
 import qualified Data.Text                     as T
