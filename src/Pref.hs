@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
+-- The interpreter
 
 module Pref
   ( codeToAst
@@ -28,16 +29,35 @@ import           Prelude                 hiding ( exp
 import           Text.Parsec             hiding ( Empty
                                                 , parse
                                                 )
+{- `v` represents what a variable is bound to.
+    This will help when we try to generalize the interpreter to
+    implement any evaluation strategy.
+-}
+data Env v = Env {getMap :: Map T.Text v} deriving (Eq, Show)
 
-data Env = Env {getMap :: Map T.Text Val} deriving (Eq, Show)
+-- `d` represents the data that a memory address points to.
+data Mem d = Mem (Map Int d) Int
 
-data Mem a = Mem (Map Int a) Int
+-- `v` is the type level argument for the environment.
+data Val v
+  = S T.Text
+  | I Int
+  | B Bool
+  | C T.Text
+      Exp
+      (Env v)
+  | T Exp (Env v) --Thunk
+  | Cons (Val v) (Val v)
+  | E --Empty
+  deriving (Eq)
 
-data Box = Thunk Exp Env
-         | Val Val
+
+-- `v` is the type level argument for environments/values
+data Box v = Thunk Exp (Env v)
+           | Val (Val v)
   deriving (Eq, Show)
 
-insertEnv :: T.Text -> Val -> Env -> Env
+insertEnv :: T.Text -> d -> Env d -> Env d
 insertEnv k b = Env . M.insert k b . getMap
 
 insertMem :: a -> Mem a -> (Mem a, Int)
@@ -49,21 +69,11 @@ updateMem id v (Mem m i) = (flip Mem i) . M.adjust (const v) id $ m
 getMemMapping :: Int -> Mem a -> Maybe a
 getMemMapping id (Mem m _) = M.lookup id m
 
-data Val
-  = S T.Text
-  | I Int
-  | B Bool
-  | C T.Text
-      Exp
-      Env
-  | T Exp Env --Thunk
-  | Cons Val
-         Val
-  | E --Empty
-  | Bx Int -- Memory reference
-  deriving (Eq)
+-- interpreter's monad stack
+type EStack d
+  = StateT (Mem (Box d)) (ReaderT (Env d) (Either EvalError)) (Val d)
 
-instance Show Val where
+instance Show (Val d) where
   show (   S s     ) = T.unpack s
   show (   I i     ) = show i
   show (   B b     ) = show b
@@ -75,19 +85,18 @@ instance Show Val where
     contents (Cons a b) = show a : contents b
     contents E          = []
     contents a          = [show a]
-  show E      = "empty"
-  show (Bx _) = "<box>"
+  show E = "empty"
 
-defaultEnv :: Env
-defaultEnv = insertEnv "empty" (Bx 0) . Env $ M.empty
+defaultEnv :: Env Int
+defaultEnv = insertEnv "empty" 0 . Env $ M.empty
 
-defaultMem :: Mem Box
+defaultMem :: Mem (Box d)
 defaultMem = fst . insertMem (Val E) . Mem M.empty $ 0
 
-eval :: Exp -> Env -> Mem Box -> Either EvalError Val
+eval :: Exp -> Env Int -> Mem (Box Int) -> Either EvalError (Val Int)
 eval e env mem = (`runReaderT` env) . (`evalStateT` mem) . evalM $ e
 
-evalM :: Exp -> StateT (Mem Box) (ReaderT Env (Either EvalError)) Val
+evalM :: Exp -> EStack Int
 evalM Empty          = return E -- EmptyList 
 evalM (SLiteral s  ) = return $ S s -- Strings
 evalM (NLiteral i  ) = return $ I i -- Numbers
@@ -95,8 +104,8 @@ evalM (BLiteral b  ) = return $ B b -- Bools
 evalM (Id       var) = do
   env <- ask
   case M.lookup var $ getMap env of
-    Nothing      -> throwError . EvalError $ "Can not identify " <> var
-    Just (Bx id) -> do
+    Nothing -> throwError . EvalError $ "Can not identify " <> var
+    Just id -> do
       b <- gets $ getMemMapping id
       case b of
         Just (Thunk exp oldEnv) -> do
@@ -105,7 +114,6 @@ evalM (Id       var) = do
           return val
         Just (Val v) -> return v
         _            -> throwError . EvalError $ "Memory error " <> var
-    Just v -> throwError . EvalError $ "Laziness error " <> (T.pack . show $ v)
 evalM (Lambda [v     ]   b) = asks (C v b) -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
 evalM (Lambda []         b) = asks (T b) -- Thunk case
@@ -113,7 +121,7 @@ evalM (Let    [(v, exp)] b) = do
   mem <- get
   env <- ask
   let (uMem, id) = insertMem (Thunk exp env) mem
-  let vVal       = Bx id
+  let vVal       = id
   put uMem
   local (insertEnv v vVal) $ evalM b -- Let base case
 evalM (Let ((v, exp) : vs) b) = evalM $ Let [(v, exp)] $ Let vs b -- Let else case
@@ -174,12 +182,11 @@ evalM (App rator [rand]) = do
       case rand of
         Id var -> do
           case M.lookup var $ getMap currEnv of
-            Nothing      -> throwError . EvalError $ "Can not identify " <> var
-            Just (Bx id) -> local (const $ insertEnv v (Bx id) env) $ evalM b
-            Just _       -> throwError . EvalError $ "Laziness error " <> var
+            Nothing -> throwError . EvalError $ "Can not identify " <> var
+            Just id -> local (const $ insertEnv v id env) $ evalM b
         _ -> do
           let (uMem, id) = insertMem (Thunk rand currEnv) mem
-          let randVal    = Bx id
+          let randVal    = id
           put uMem
           local (const $ insertEnv v randVal env) $ evalM b
     _ ->
@@ -191,11 +198,7 @@ evalM (App rator (r : rands)) = evalM (App (App rator [r]) rands)
 evalM e =
   throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
-evaluateNumOperation
-  :: (Int -> Int -> Int)
-  -> Int
-  -> [Exp]
-  -> StateT (Mem Box) (ReaderT Env (Either EvalError)) Val
+evaluateNumOperation :: (Int -> Int -> Int) -> Int -> [Exp] -> EStack Int
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
@@ -211,10 +214,7 @@ evaluateNumOperation op base rands = do
   return . I $ Prelude.foldr op base nums
 
 evaluateStrOperation
-  :: (T.Text -> T.Text -> T.Text)
-  -> T.Text
-  -> [Exp]
-  -> StateT (Mem Box) (ReaderT Env (Either EvalError)) Val
+  :: (T.Text -> T.Text -> T.Text) -> T.Text -> [Exp] -> EStack Int
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
@@ -230,13 +230,18 @@ evaluateStrOperation op base rands = do
   return . S $ Prelude.foldr op base strs
 
 --TODO: Memory can be updated by top-level expressions in cbr
-evalList :: [Exp] -> [(T.Text, Exp)] -> Env -> Mem Box -> Either EvalError [Val]
+evalList
+  :: [Exp]
+  -> [(T.Text, Exp)]
+  -> Env Int
+  -> Mem (Box Int)
+  -> Either EvalError [Val Int]
 evalList [] _ _ _ = return []
 evalList (Def id binding : es) futureBindings env mem =
-  let newFutures   = L.drop 1 futureBindings
-      fixedBinding = topLevelFunction id newFutures binding
-      (uMem, mid)  = insertMem (Thunk fixedBinding env) mem
-      val          = Bx mid
+  let newFutures    = L.drop 1 futureBindings
+      fixedBinding  = topLevelFunction id newFutures binding
+      (uMem, memId) = insertMem (Thunk fixedBinding env) mem
+      val           = memId
   in  evalList es newFutures (insertEnv id val env) uMem
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
@@ -268,7 +273,7 @@ evalList (exp : es) fb env mem =
 codeToAst :: T.Text -> Either ParseError [Exp]
 codeToAst code = either throwError return $ runParser parse () "" code
 
-codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
+codeToVal :: T.Text -> Either EvalError (Either ParseError [Val Int])
 codeToVal code = case codeToAst code of
   Left  e   -> return . Left $ e
   Right ast -> case evalList ast (futureBindings ast) defaultEnv defaultMem of
