@@ -42,7 +42,7 @@ non-numeric character. The following characters are not allowed:
 
 * open/close parenthesis, braces, brackets, or angles
 * single/double quotes
-* comma, `#`, `\``, `:`, or `;`
+* comma, quasiquote (\`), `#`, `:`, or `;`
 
 ---
 
