@@ -35,6 +35,7 @@ insertEnv k v e = Env $ M.insert k v $ getMap e
 data Val
   = S T.Text
   | I Int
+  | B Bool
   | C T.Text
       Exp
       Env
@@ -47,6 +48,7 @@ data Val
 instance Show Val where
   show (   S s     ) = T.unpack s
   show (   I i     ) = show i
+  show (   B b     ) = show b
   show (   C s _ _ ) = "<lambda:" <> T.unpack s <> ">"
   show (   T    _ _) = "<thunk>"
   show ls@(Cons _ _) = "(list"
@@ -67,6 +69,7 @@ evalM :: Exp -> ReaderT Env (Either EvalError) Val
 evalM Empty        = return $ E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
+evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id       v) = do
   env <- ask
   case M.lookup v $ getMap env of
@@ -80,12 +83,17 @@ evalM (Let    ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else
 evalM (If cond thn els         ) = do
   eCond <- evalM cond
   case eCond of
-    (I 0) -> evalM els
-    _     -> evalM thn -- If case
-evalM (App (Id "+"            ) rands     ) = evaluateNumOperation (+) 0 rands
-evalM (App (Id "-"            ) rands     ) = evaluateNumOperation (-) 0 rands
-evalM (App (Id "*"            ) rands     ) = evaluateNumOperation (*) 1 rands
-evalM (App (Id "/"            ) rands     ) = evaluateNumOperation div 1 rands
+    (B False) -> evalM els
+    _         -> evalM thn -- If case
+evalM (App (Id "+"    ) rands) = evaluateNumOperation (+) 0 rands
+evalM (App (Id "-"    ) rands) = evaluateNumOperation (-) 0 rands
+evalM (App (Id "*"    ) rands) = evaluateNumOperation (*) 1 rands
+evalM (App (Id "/"    ) rands) = evaluateNumOperation div 1 rands
+evalM (App (Id "zero?") [num]) = do
+  eNum <- evalM num
+  return $ case eNum of
+    I 0 -> B True
+    _   -> B False
 evalM (App (Id "string-append") rands     ) = evaluateStrOperation (<>) "" rands
 evalM (App (Id "cons"         ) [car, cdr]) = do
   eCar <- evalM car
@@ -104,8 +112,8 @@ evalM (App (Id "cdr") [cons]) = do
 evalM (App (Id "empty?") [ls]) = do
   eLs <- evalM ls
   return $ case eLs of
-    E -> I 1
-    _ -> I 0
+    E -> B True
+    _ -> B False
 evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Combinator
 evalM (App rator      []    ) = do
   eRator <- evalM rator

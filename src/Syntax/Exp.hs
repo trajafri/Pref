@@ -11,6 +11,7 @@ data Exp
   | Id T.Text
   | NLiteral Int
   | SLiteral T.Text
+  | BLiteral Bool
   | Lambda [T.Text]
            Exp
   | If Exp
@@ -33,6 +34,7 @@ instance Pretty Exp where
   pretty Empty        = pretty "empty"
   pretty (NLiteral n) = pretty $ show n
   pretty (SLiteral s) = pretty s
+  pretty (BLiteral b) = pretty b
   pretty (Lambda v b) =
     let varDoc = parens . hsep $ pretty <$> v
     in  parens $ hang (pred indentC) $ vcat
