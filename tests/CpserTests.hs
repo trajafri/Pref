@@ -5,6 +5,7 @@ module CpserTests
   )
 where
 
+import           Control.Monad.State
 import           Data.Either
 import qualified Data.Text                     as T
 import           Syntax.Exp
@@ -20,9 +21,10 @@ getAst = head . fromRight [Id "error"] . codeToAst
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
-                           (getAst e)
-                           (cpser . getAst $ testCase)
+  [ TestCase $ assertEqual
+      (show $ testCase <> errorMsg)
+      (getAst e)
+      (fst . flip runState Unit $ cpser . getAst $ testCase)
   | (testCase, e) <-
     [ ("1", "1")
     , ("\"S\"", "\"S\"")
