@@ -10,20 +10,19 @@ module Pref
   )
 where
 
+import           Control.Monad.Except --For throwError
 import           Control.Monad.Reader
-import qualified Control.Monad.Except          as E
-
 import           Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as TIO
 import           Errors
 import           Syntax.Exp
-import           Lexer
 import           Parser
 import           Prelude                 hiding ( exp
                                                 , id
                                                 )
 import           System.IO
+import           Text.Parsec             hiding ( parse )
 
 type Env = Map T.Text Val
 
@@ -56,16 +55,16 @@ instance Show Val where
 defaultEnv :: Env
 defaultEnv = insert "empty" E M.empty
 
-eval :: Exp -> Env -> Either Error Val
+eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`runReaderT` env) . evalM $ e
 
-evalM :: Exp -> ReaderT Env (Either Error) Val
+evalM :: Exp -> ReaderT Env (Either EvalError) Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id       v) = do
   env <- ask
   case M.lookup v env of
-    Nothing  -> E.throwError . EvalError $ "Can not identify " <> v
+    Nothing  -> throwError . EvalError $ "Can not identify " <> v
     Just exp -> return exp -- Variable
 evalM (Lambda [v     ]   b) = C v b <$> ask -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
@@ -92,12 +91,12 @@ evalM (App (Id "car") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons a _) -> return a
-    _          -> E.throwError . EvalError $ "Car applied to a non-list value "
+    _          -> throwError . EvalError $ "Car applied to a non-list value "
 evalM (App (Id "cdr") [cons]) = do
   eCons <- evalM cons
   case eCons of
     (Cons _ d) -> return d
-    _          -> E.throwError . EvalError $ "Cdr applied to a non-list value"
+    _          -> throwError . EvalError $ "Cdr applied to a non-list value"
 evalM (App (Id "empty?") [ls]) = do
   eLs <- evalM ls
   return $ case eLs of
@@ -110,7 +109,7 @@ evalM (App rator []) = do
   case eRator of
     (T b env) -> local (const env) $ evalM b
     _ ->
-      E.throwError
+      throwError
         .  EvalError
         $  "Non Thunk invocation:\n"
         <> (T.pack . show $ eRator)
@@ -121,23 +120,23 @@ evalM (App rator [rand]) = do
       eRand <- evalM rand
       local (const $ insert v eRand env) $ evalM b
     _ ->
-      E.throwError
+      throwError
         .  EvalError
         $  "Non function used as a function:\n"
         <> (T.pack . show $ rator)
 evalM (App rator (r : rands)) = evalM (App (App rator [r]) rands)
 evalM e =
-  E.throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
+  throwError . EvalError $ "Unidentified expression:\n" <> (T.pack . show $ e)
 
 evaluateNumOperation
-  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either Error) Val
+  :: (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either EvalError) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums      <- mapM
     (\case
       (I i) -> return i
       _ ->
-        E.throwError
+        throwError
           .  EvalError
           $  " got a non numeric argument in the following operands:\n"
           <> (T.pack . show $ rands)
@@ -149,14 +148,14 @@ evaluateStrOperation
   :: (T.Text -> T.Text -> T.Text)
   -> T.Text
   -> [Exp]
-  -> ReaderT Env (Either Error) Val
+  -> ReaderT Env (Either EvalError) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs      <- mapM
     (\case
       (S i) -> return i
       _ ->
-        E.throwError
+        throwError
           .  EvalError
           $  " got a non string argument in the following operands:\n"
           <> (T.pack . show $ rands)
@@ -164,7 +163,7 @@ evaluateStrOperation op base rands = do
     maybestrs
   return . S $ Prelude.foldr op base strs
 
-evalList :: [Exp] -> Env -> Either Error [Val]
+evalList :: [Exp] -> Env -> Either EvalError [Val]
 evalList []                 _   = return []
 evalList (Def id bind : es) env = do
   eBind <- eval bind env
@@ -174,19 +173,22 @@ evalList (exp : es) env = do
   eExps <- evalList es env
   return $ eExp : eExps
 
-codeToAst :: T.Text -> Either Error [Exp]
-codeToAst code = do
-  tokens <- tokenize code
-  ptree  <- parse tokens
-  traverse treeToExp ptree
+codeToAst :: T.Text -> Either ParseError [Exp]
+codeToAst code =
+  either throwError return $ runParser parse () "" . T.unpack $ code
 
-codeToVal :: T.Text -> Either Error [Val]
-codeToVal code = do
-  asts <- codeToAst code
-  evalList asts defaultEnv
+codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
+codeToVal code = case codeToAst $ code of
+  (Left  e  ) -> return . Left $ e
+  (Right ast) -> case evalList ast defaultEnv of
+    (Left  e   ) -> Left e
+    (Right vals) -> return . Right $ vals
 
 evaluatePref :: T.Text -> T.Text
-evaluatePref code = either (T.pack . show) (T.pack . show) $ codeToVal code
+evaluatePref code =
+  either (T.pack . show) (either (T.pack . show) (T.pack . show))
+    . codeToVal
+    $ code
 
 main :: IO ()
 main = do
@@ -197,13 +199,6 @@ main = do
     ReadMode
     (\h -> do
       fileContent <- TIO.hGetContents h
-      either (print . show) (mapM_ $ print . show) (codeToVal fileContent)
+      either (print . show) (either (print . show) $ mapM_ $ print . show)
+        $ codeToVal fileContent
     )
-
-
-
-
-
-
-
-

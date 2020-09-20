@@ -1,15 +1,21 @@
 # Revision history for Pref
 
-## 0.2.1.1 -- 2019-07-05
+## 0.3.0.0 -- 2019-07-08
+
+* Hello Parsec!
+* Replaced naive lexing/parsing with danq Parsec stuff
+* Removed Syntax.Tokens and deleted tests that are taken care of by Parsec
+
+## 0.2.1.1 -- 2019-07-06
 
 * Use DList instead of regular list in Transfrom.CPS
 * Add note in Transform.CPS regards its assumptions
 
-## 0.2.1.1 -- 2019-07-05
+## 0.2.1.1 -- 2019-07-06
 
 * Remove ContT usage in Pref
 
-## 0.2.1.0 -- 2019-07-05
+## 0.2.1.0 -- 2019-07-06
 
 * Use effect-stack in CPSer
 

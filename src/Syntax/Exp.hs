@@ -23,23 +23,6 @@ data Exp
         Exp
   deriving (Eq)
 
-instance Show Exp where
-  show (Id       v) = T.unpack v
-  show (NLiteral v) = show v
-  show (SLiteral v) = T.unpack v
-  show (Lambda vs b) =
-    "(lambda (" <> (unwords $ T.unpack <$> vs) <> ") " <> show b <> ")"
-  show (If c thn els) =
-    "(if " <> show c <> " " <> show thn <> " " <> show els <> ")"
-  show (Let bindings body) =
-    "(let (("
-      <> unwords (map (\(v, b) -> T.unpack v <> show b) bindings)
-      <> ")) "
-      <> show body
-      <> ")"
-  show (App tor nds) = "(app " <> show tor <> " " <> show nds <> ")"
-  show (Def v   b  ) = "(define " <> T.unpack v <> " " <> show b
-
 indentC :: Num a => a
 indentC = 2
 
@@ -67,4 +50,7 @@ instance Pretty Exp where
     parens $ (foldr1 (<+>) $ map pretty (rator : rands))
   pretty (Def v bind) = parens
     $ vcat [pretty "define" <+> pretty v, nest (pred indentC) $ pretty bind]
+
+instance Show Exp where
+  show = show . pretty
 

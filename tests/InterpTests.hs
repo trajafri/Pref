@@ -5,6 +5,7 @@ module InterpTests
   )
 where
 
+import           Data.Either
 import           Data.Map                      as M
 import qualified Data.Text                     as T
                                          hiding ( zip )
@@ -20,9 +21,10 @@ errorMsg = " interpreted incorrectly"
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
-                           (return [e])
-                           (codeToVal testCase)
+  [ TestCase $ assertEqual
+      (show $ testCase <> errorMsg)
+      [e]
+      (either (\_ -> []) (fromRight []) $ codeToVal testCase)
   | (testCase, e) <-
     [ ("1"                          , I 1)
     , ("\"a\""                      , S "a")
