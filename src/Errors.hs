@@ -7,4 +7,8 @@ module Errors
 data Error
   = ParseError String
   | EvalError String
+  | LexerError String
   deriving (Show, Eq)
+
+-- I was thinking of making an Error type class, but that seems
+-- useless

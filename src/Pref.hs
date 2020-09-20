@@ -6,6 +6,8 @@ module Pref
   , Val(..)
   ) where
 
+import Control.Monad.Trans
+import Control.Monad.Trans.Reader
 import Data.Map as M
 import Errors
 import Exp
@@ -32,89 +34,115 @@ instance Show Val where
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
 
-eval :: Exp -> Env -> Either Error Val
-eval (SLiteral s) = const $ return $ S s -- Strings. Not implemented yet
-eval (NLiteral i) = const $ return $ I i -- Numbers
-eval (Id v) =
-  maybe (Left $ EvalError $ "Can not identify " ++ v) Right . M.lookup v -- Variable
-eval (Lambda [v] b) = return . C v b -- Lambda base case
-eval (Lambda (v:vs) b) = eval $ Lambda [v] $ Lambda vs b -- Lambda currying case
-eval (Lambda [] b) = return . T b -- Thunk case
-eval (Let [(v, val)] b) =
-  \env -> do
-    eVal <- eval val env
-    eval b (insert v eVal env)
-eval (Let ((v, val):vs) b) = eval $ Let [(v, val)] $ Let vs b
-eval (If cond thn els) =
-  \env -> do
-    eCond <- eval cond env
-    case eCond of
-      (I 0) -> eval els env
-      _ -> eval thn env
-eval (App (Id "+") rands) = evaluateNumOperation (+) 0 rands
-eval (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
-eval (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
-eval (App (Id "/") rands) = evaluateNumOperation div 1 rands
-eval (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
-eval (App rator rands) =
-  \env -> do
-    eRator <- eval rator env
-    case (eRator, rands) of
-      (C v b e, []) ->
-        Left $ EvalError "Function expected arguments applied to nothing"
-      (T b e, []) -> eval b e
-      (C v b e, [rand]) -> eval rand env >>= (\rand -> eval b (insert v rand e))
-      (C v b e, r:rs) ->
-        eval r env >>= (\rand -> eval (App b rs) (insert v rand e))
-      _ ->
-        Left $ EvalError $ "Non function used as a function:\n" ++ show rator --Not a function application
-eval e = const $ Left $ EvalError $ "Unidentified expression:\n" ++ show e
+eval :: Exp -> Env -> (Either Error Val)
+eval e = runReaderT $ evalM e
+
+evalM :: Exp -> ReaderT Env (Either Error) Val
+evalM (SLiteral s) = return $ S s -- Strings
+evalM (NLiteral i) = return $ I i -- Numbers
+evalM (Id v) -- Variable
+ = do
+  env <- ask
+  case M.lookup v env of
+    Nothing -> lift . Left . EvalError $ "Can not identify " ++ v
+    Just exp -> return exp
+evalM (Lambda [v] b) -- Lambda base case
+ = do
+  env <- ask
+  return $ C v b env
+evalM (Lambda (v:vs) b) -- Lambda currying case
+ = evalM $ Lambda [v] $ Lambda vs b
+evalM (Lambda [] b) -- Thunk case
+ = do
+  env <- ask
+  return $ T b env
+evalM (Let [(v, val)] b) -- Let base case
+ = do
+  eValue <- evalM val
+  local (insert v eValue) $ evalM b
+evalM (Let ((v, val):vs) b) -- Let else case
+ = evalM $ Let [(v, val)] $ Let vs b
+evalM (If cond thn els) -- If case
+ = do
+  eCond <- evalM cond
+  case eCond of
+    (I 0) -> evalM els
+    _ -> evalM thn
+evalM (App (Id "+") rands) = evaluateNumOperation (+) 0 rands
+evalM (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
+evalM (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
+evalM (App (Id "/") rands) = evaluateNumOperation div 1 rands
+evalM (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
+evalM (App (Id "fix") [func]) -- Z Combinator
+ = evalM (Lambda ["x"] (App func [App (Id "fix") [func], Id "x"]))
+evalM (App rator []) = do
+  eRator <- evalM rator
+  case eRator of
+    (T b env) -> do
+      local (const env) $ evalM b
+    _ -> lift . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
+evalM (App rator [rand]) = do
+  eRator <- evalM rator
+  case eRator of
+    (C v b env) -> do
+      eRand <- evalM rand
+      local (const $ insert v eRand env) $ evalM b
+    _ ->
+      lift . Left . EvalError $
+      "Non function used as a function:\n" ++ show rator
+evalM (App rator (r:rands)) = evalM (App (App rator [r]) rands)
+evalM e = lift . Left . EvalError $ "Unidentified expression:\n" ++ show e
 
 evaluateNumOperation ::
-     (Int -> Int -> Int) -> Int -> [Exp] -> Env -> Either Error Val
-evaluateNumOperation op base rands env = do
-  maybenums <- mapM (`eval` env) rands
+     (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either Error) Val
+evaluateNumOperation op base rands = do
+  maybenums <- mapM evalM rands
   nums <-
     mapM
       (\case
          (I i) -> return i
          _ ->
-           Left $
-           EvalError $
+           lift . Left . EvalError $
            " got a non numeric argument in the following operands:\n" ++
            show rands)
       maybenums
-  return $ I $ Prelude.foldr op base nums
+  return . I $ Prelude.foldr op base nums
 
 evaluateStrOperation ::
-     (String -> String -> String) -> String -> [Exp] -> Env -> Either Error Val
-evaluateStrOperation op base rands env = do
-  maybestrs <- mapM (`eval` env) rands
+     (String -> String -> String)
+  -> String
+  -> [Exp]
+  -> ReaderT Env (Either Error) Val
+evaluateStrOperation op base rands = do
+  maybestrs <- mapM evalM rands
   strs <-
     mapM
       (\case
          (S i) -> return i
          _ ->
-           Left $
-           EvalError $
+           lift . Left . EvalError $
            " got a non string argument in the following operands:\n" ++
            show rands)
       maybestrs
-  return $ S $ Prelude.foldr op base strs
+  return . S $ Prelude.foldr op base strs
 
 evalList :: [Exp] -> Env -> Either Error [Val]
-evalList [] _ = return []
-evalList (Def id bind:es) e = do
-  eBind <- eval bind e
-  evalList es (insert id eBind e)
-evalList (exp:es) e = do
-  eExp <- eval exp e
-  eEs <- evalList es e
+evalList exps = runReaderT (evalListM exps)
+
+evalListM :: [Exp] -> ReaderT Env (Either Error) [Val]
+evalListM [] = return []
+evalListM (Def id bind:es) = do
+  env <- ask
+  eBind <- evalM bind
+  local (insert id eBind) $ evalListM es
+evalListM (exp:es) = do
+  eExp <- evalM exp
+  eEs <- evalListM es
   return (eExp : eEs)
 
 codeToVal :: String -> Either Error [Val]
 codeToVal code = do
-  let tokens = tokenize code
+  tokens <- tokenize code
   ptree <- parse tokens
   asts <- traverse treeToExp ptree
   evalList asts M.empty
