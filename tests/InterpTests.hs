@@ -9,6 +9,8 @@ import Parser
 import Pref
 import Test.HUnit
 
+defaultEnv = insert "empty" E empty
+
 errorMsg = " interpreted incorrectly"
 
 allTests =
@@ -16,7 +18,7 @@ allTests =
   | (e, test) <-
       [ (I 1, "1")
       , (S "a", "\"a\"")
-      , (C "x" (NLiteral 2) empty, "(lambda (x) 2)")
+      , (C "x" (NLiteral 2) defaultEnv, "(lambda (x) 2)")
       , (I 2, "((lambda (x) 2) 3)")
       , (I 2, "((lambda (x) 2) 3)")
       , (I 5, "((lambda (x y z) z) 3 4 5)")
@@ -29,6 +31,10 @@ allTests =
       , ( I 8
         , "(fix (lambda (fib last curr n)\
                           \ (if (- n 2) (fib curr (+ last curr) (- n 1)) curr)) 1 1 6)")
+      , (I 42, "(car (cons (+ 30 12) empty))")
+      , (Cons (I 42) E, "(cdr (cons 2 (cons (+ 30 12) empty)))")
+      , ( Cons (I 1) (Cons (I 2) (Cons (I 3) E))
+        , "(cons 1 (cons 2 (cons 3 empty)))")
       ]
   ]
 

@@ -7,6 +7,7 @@ module Pref
   ) where
 
 import Control.Monad.Trans
+
 import Control.Monad.Trans.Cont
 import Control.Monad.Trans.Reader
 import Data.Map as M
@@ -27,6 +28,9 @@ data Val
       Env
   | T Exp --Thunk
       Env
+  | Cons Val
+         Val
+  | E --Empty
   deriving (Eq)
 
 instance Show Val where
@@ -34,9 +38,22 @@ instance Show Val where
   show (I i) = show i
   show (C s b env) = "<lambda:" ++ s ++ ">"
   show (T s e) = "<thunk>"
+  show ls@(Cons car cdr) =
+    "(list" ++ Prelude.foldr (\x y -> " " ++ x ++ y) ")" (contents ls)
+    where
+      contents (Cons a b) = show a : contents b
+      contents E = []
+      contents a = [show a]
+  show E = "empty"
 
-eval :: Exp -> Env -> (Either Error Val)
-eval e env = (flip runContT Right) . (flip runReaderT env) . evalM $ e
+defaultEnv :: Env
+defaultEnv = insert "empty" E M.empty
+
+liftEither :: Either a b -> ReaderT Env (ContT r (Either a)) b
+liftEither = lift . lift
+
+eval :: Exp -> Env -> Either Error Val
+eval e env = (`runContT` Right) . (`runReaderT` env) . evalM $ e
 
 evalM :: Exp -> ReaderT Env (ContT Val (Either Error)) Val
 evalM (SLiteral s) = return $ S s -- Strings
@@ -45,18 +62,14 @@ evalM (Id v) -- Variable
  = do
   env <- ask
   case M.lookup v env of
-    Nothing -> lift . lift . Left . EvalError $ "Can not identify " ++ v
+    Nothing -> liftEither . Left . EvalError $ "Can not identify " ++ v
     Just exp -> return exp
 evalM (Lambda [v] b) -- Lambda base case
- = do
-  env <- ask
-  return $ C v b env
+ = C v b <$> ask
 evalM (Lambda (v:vs) b) -- Lambda currying case
  = evalM $ Lambda [v] $ Lambda vs b
 evalM (Lambda [] b) -- Thunk case
- = do
-  env <- ask
-  return $ T b env
+ = T b <$> ask
 evalM (Let [(v, val)] b) -- Let base case
  = do
   eValue <- evalM val
@@ -74,15 +87,34 @@ evalM (App (Id "-") rands) = evaluateNumOperation (-) 0 rands
 evalM (App (Id "*") rands) = evaluateNumOperation (*) 1 rands
 evalM (App (Id "/") rands) = evaluateNumOperation div 1 rands
 evalM (App (Id "string-append") rands) = evaluateStrOperation (++) "" rands
+evalM (App (Id "cons") [car, cdr]) = do
+  eCar <- evalM car
+  eCdr <- evalM cdr
+  return $ Cons eCar eCdr
+evalM (App (Id "car") [cons]) = do
+  eCons <- evalM cons
+  case eCons of
+    (Cons a _) -> return a
+    _ -> liftEither . Left . EvalError $ "Car applied to a non-list value"
+evalM (App (Id "cdr") [cons]) = do
+  eCons <- evalM cons
+  case eCons of
+    (Cons _ d) -> return d
+    _ -> liftEither . Left . EvalError $ "Cdr applied to a non-list value"
+evalM (App (Id "empty?") [ls]) = do
+  eLs <- evalM ls
+  return $
+    case eLs of
+      E -> I 1
+      _ -> I 0
 evalM (App (Id "fix") [func]) -- Z Combinator
  = evalM (Lambda ["x"] (App func [App (Id "fix") [func], Id "x"]))
 evalM (App rator []) = do
   eRator <- evalM rator
   case eRator of
-    (T b env) -> do
-      local (const env) $ evalM b
+    (T b env) -> local (const env) $ evalM b
     _ ->
-      lift . lift . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
+      liftEither . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
 evalM (App rator [rand]) = do
   eRator <- evalM rator
   case eRator of
@@ -90,11 +122,10 @@ evalM (App rator [rand]) = do
       eRand <- evalM rand
       local (const $ insert v eRand env) $ evalM b
     _ ->
-      lift . lift . Left . EvalError $
+      liftEither . Left . EvalError $
       "Non function used as a function:\n" ++ show rator
 evalM (App rator (r:rands)) = evalM (App (App rator [r]) rands)
-evalM e =
-  lift . lift . Left . EvalError $ "Unidentified expression:\n" ++ show e
+evalM e = liftEither . Left . EvalError $ "Unidentified expression:\n" ++ show e
 
 evaluateNumOperation ::
      (Int -> Int -> Int)
@@ -108,7 +139,7 @@ evaluateNumOperation op base rands = do
       (\case
          (I i) -> return i
          _ ->
-           lift . lift . Left . EvalError $
+           liftEither . Left . EvalError $
            " got a non numeric argument in the following operands:\n" ++
            show rands)
       maybenums
@@ -126,7 +157,7 @@ evaluateStrOperation op base rands = do
       (\case
          (S i) -> return i
          _ ->
-           lift . lift . Left . EvalError $
+           liftEither . Left . EvalError $
            " got a non string argument in the following operands:\n" ++
            show rands)
       maybestrs
@@ -147,7 +178,7 @@ codeToVal code = do
   tokens <- tokenize code
   ptree <- parse tokens
   asts <- traverse treeToExp ptree
-  evalList asts M.empty
+  evalList asts defaultEnv
 
 evaluatePref :: String -> String
 evaluatePref code = either show show $ codeToVal code
