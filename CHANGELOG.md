@@ -1,5 +1,11 @@
 # Revision history for Pref
 
+## 0.5.0.0 -- 2020-06-10
+
+* Make Pref call-by-need (Lazy)
+* Remove EffectStack dependency
+* Allow <, > in variable names
+
 ## 0.4.1.0 -- 2020-02-23
 
 * Template Haskell support for Pref
@@ -20,7 +26,7 @@
 
 ## 0.3.4.0 -- 2019-08-24
 
-* Made Pref call-by-need (non-eager)
+* Made Pref call-by-name (non-eager)
 
 
 ## 0.3.3.0 -- 2019-08-23
