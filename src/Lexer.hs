@@ -10,7 +10,6 @@ module Lexer
   )
 where
 
-import           Control.Monad.Identity
 import           Data.Char
 import           Data.List                      ( nub )
 import qualified Data.Text                     as T
@@ -28,20 +27,22 @@ import           Text.Parsec
 identifier :: Parsec T.Text () T.Text
 identifier = try $ do
   idName@(idC : ids) <- many1 (alphaNum <|> satisfy validIdChar)
-  if isDigit idC && all isDigit ids then mzero else return $ T.pack idName
+  if (isDigit idC || idC == '.') && all isDigit ids
+    then unexpected "numeric value or a period as an identifier"
+    else return $ T.pack idName
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
 parens p = do
-  _   <- char '('
+  c   <- char '(' <|> char '{' <|> char '['
   res <- p
-  _   <- char ')'
+  _   <- char (if c == '(' then ')' else if c == '{' then '}' else ']')
   return res
 
 bool :: Parsec T.Text () Bool
 bool = try $ do
   _ <- char '#'
   x <- char 'f' <|> char 't' <?> "bool litereal"
-  return $ if x == 't' then True else False
+  return $ x == 't'
 
 -- Parsers shamelessly copied from source
 number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer
@@ -223,7 +224,7 @@ decimal :: Parsec T.Text () Integer
 decimal =
   try
     $   (char '+' *> number 10 digit)
-    <|> (const negate <$> char '-' <*> number 10 digit)
+    <|> (negate <$ char '-' <*> number 10 digit)
     <|> number 10 digit
 
 whiteSpace :: Parsec T.Text () ()
@@ -269,14 +270,11 @@ validIdChar c = all
   , ('(' /=)
   , ('\"' /=)
   , ('\'' /=)
-  , ('.' /=)
   , (',' /=)
   , ('[' /=)
   , (']' /=)
   , ('{' /=)
   , ('}' /=)
-  , ('<' /=)
-  , ('>' /=)
   , ('#' /=)
   , ('`' /=)
   , (':' /=)

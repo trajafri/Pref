@@ -1,0 +1,6 @@
+(define f (lambda (f) (f 2)))
+
+(define g (lambda (f) 3))
+
+(let ((f (f g)))
+  (+ f 3))

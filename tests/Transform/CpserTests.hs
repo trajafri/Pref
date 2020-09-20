@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module CpserTests
+module Transform.CpserTests
   ( cpserTestList
   )
 where
