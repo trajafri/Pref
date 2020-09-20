@@ -7,6 +7,7 @@ module Pref
   ) where
 
 import Control.Monad.Trans
+import Control.Monad.Trans.Cont
 import Control.Monad.Trans.Reader
 import Data.Map as M
 import Errors
@@ -35,16 +36,16 @@ instance Show Val where
   show (T s e) = "<thunk>"
 
 eval :: Exp -> Env -> (Either Error Val)
-eval e = runReaderT $ evalM e
+eval e env = (flip runContT Right) . (flip runReaderT env) . evalM $ e
 
-evalM :: Exp -> ReaderT Env (Either Error) Val
+evalM :: Exp -> ReaderT Env (ContT Val (Either Error)) Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id v) -- Variable
  = do
   env <- ask
   case M.lookup v env of
-    Nothing -> lift . Left . EvalError $ "Can not identify " ++ v
+    Nothing -> lift . lift . Left . EvalError $ "Can not identify " ++ v
     Just exp -> return exp
 evalM (Lambda [v] b) -- Lambda base case
  = do
@@ -80,7 +81,8 @@ evalM (App rator []) = do
   case eRator of
     (T b env) -> do
       local (const env) $ evalM b
-    _ -> lift . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
+    _ ->
+      lift . lift . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
 evalM (App rator [rand]) = do
   eRator <- evalM rator
   case eRator of
@@ -88,13 +90,17 @@ evalM (App rator [rand]) = do
       eRand <- evalM rand
       local (const $ insert v eRand env) $ evalM b
     _ ->
-      lift . Left . EvalError $
+      lift . lift . Left . EvalError $
       "Non function used as a function:\n" ++ show rator
 evalM (App rator (r:rands)) = evalM (App (App rator [r]) rands)
-evalM e = lift . Left . EvalError $ "Unidentified expression:\n" ++ show e
+evalM e =
+  lift . lift . Left . EvalError $ "Unidentified expression:\n" ++ show e
 
 evaluateNumOperation ::
-     (Int -> Int -> Int) -> Int -> [Exp] -> ReaderT Env (Either Error) Val
+     (Int -> Int -> Int)
+  -> Int
+  -> [Exp]
+  -> ReaderT Env (ContT Val (Either Error)) Val
 evaluateNumOperation op base rands = do
   maybenums <- mapM evalM rands
   nums <-
@@ -102,7 +108,7 @@ evaluateNumOperation op base rands = do
       (\case
          (I i) -> return i
          _ ->
-           lift . Left . EvalError $
+           lift . lift . Left . EvalError $
            " got a non numeric argument in the following operands:\n" ++
            show rands)
       maybenums
@@ -112,7 +118,7 @@ evaluateStrOperation ::
      (String -> String -> String)
   -> String
   -> [Exp]
-  -> ReaderT Env (Either Error) Val
+  -> ReaderT Env (ContT Val (Either Error)) Val
 evaluateStrOperation op base rands = do
   maybestrs <- mapM evalM rands
   strs <-
@@ -120,25 +126,21 @@ evaluateStrOperation op base rands = do
       (\case
          (S i) -> return i
          _ ->
-           lift . Left . EvalError $
+           lift . lift . Left . EvalError $
            " got a non string argument in the following operands:\n" ++
            show rands)
       maybestrs
   return . S $ Prelude.foldr op base strs
 
 evalList :: [Exp] -> Env -> Either Error [Val]
-evalList exps = runReaderT (evalListM exps)
-
-evalListM :: [Exp] -> ReaderT Env (Either Error) [Val]
-evalListM [] = return []
-evalListM (Def id bind:es) = do
-  env <- ask
-  eBind <- evalM bind
-  local (insert id eBind) $ evalListM es
-evalListM (exp:es) = do
-  eExp <- evalM exp
-  eEs <- evalListM es
-  return (eExp : eEs)
+evalList [] env = return []
+evalList (Def id bind:es) env = do
+  eBind <- eval bind env
+  evalList es (insert id eBind env)
+evalList (exp:es) env = do
+  eExp <- eval exp env
+  eExps <- evalList es env
+  return $ eExp : eExps
 
 codeToVal :: String -> Either Error [Val]
 codeToVal code = do
