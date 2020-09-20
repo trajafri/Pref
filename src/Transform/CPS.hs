@@ -1,9 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Transform.CPS where
 
-import           Control.Monad.Trans
-import           Control.Monad.Trans.State
+import           Control.Monad.State
 import           Data.Functor.Identity
-import           Exp
+import qualified Data.Text                     as T
+import           Syntax.Exp
 
 -- TODO, maybe fix reverse by DList?
 letToApp :: Exp -> Exp
@@ -87,19 +89,18 @@ cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
   exps <- lift get
   i    <- get
-  let finalResult = "arg" ++ show i
-  let fixedExps   = reverse exps -- since we were consing items, gotta reverse here
+  let finalResult = "arg" <> (T.pack . show $ i)
+  let (e : es)    = reverse exps -- since we were consing items, gotta reverse here
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
-  let finalFunc handleResult =
-        App (head fixedExps) $ tail fixedExps ++ [finalExp handleResult]
+  let finalFunc handleResult = App e $ es ++ [finalExp handleResult]
   return finalFunc {- Here, we reconstruct the original application from the
              accumulated bindings for each expression in the application,
              create the last lambda, and wait for its body. -}
 cpsApp (App rator rands : exs) = do
   count <- get
   let ((currExpCont, i), _) = runAppCPSer count [] . cpsApp $ (rator : rands)
-  lift . modify $ ((Id $ "arg" ++ show i) :) -- This the result of the whole application
+  lift . modify $ (Id ("arg" <> (T.pack . show $ i)) :) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`

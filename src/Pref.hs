@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
 module Pref
   ( codeToAst
@@ -10,13 +10,14 @@ module Pref
   )
 where
 
-import           Control.Monad.Trans
+import           Control.Monad.Cont
+import           Control.Monad.Reader
 
-import           Control.Monad.Trans.Cont
-import           Control.Monad.Trans.Reader
 import           Data.Map                      as M
+import qualified Data.Text                     as T
+import qualified Data.Text.IO                  as TIO
 import           Errors
-import           Exp
+import           Syntax.Exp
 import           Lexer
 import           Parser
 import           Prelude                 hiding ( exp
@@ -24,12 +25,12 @@ import           Prelude                 hiding ( exp
                                                 )
 import           System.IO
 
-type Env = Map String Val
+type Env = Map T.Text Val
 
 data Val
-  = S String
+  = S T.Text
   | I Int
-  | C String
+  | C T.Text
       Exp
       Env
   | T Exp --Thunk
@@ -40,12 +41,12 @@ data Val
   deriving (Eq)
 
 instance Show Val where
-  show (   S s     ) = s
+  show (   S s     ) = T.unpack s
   show (   I i     ) = show i
-  show (   C s _ _ ) = "<lambda:" ++ s ++ ">"
+  show (   C s _ _ ) = "<lambda:" <> T.unpack s <> ">"
   show (   T    _ _) = "<thunk>"
   show ls@(Cons _ _) = "(list"
-    ++ Prelude.foldr (\x y -> " " ++ x ++ y) ")" (contents ls)
+    <> Prelude.foldr (\x y -> " " <> x <> y) ")" (contents ls)
    where
     contents (Cons a b) = show a : contents b
     contents E          = []
@@ -67,7 +68,7 @@ evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id       v) = do
   env <- ask
   case M.lookup v env of
-    Nothing  -> liftEither . Left . EvalError $ "Can not identify " ++ v
+    Nothing  -> liftEither . Left . EvalError $ "Can not identify " <> v
     Just exp -> return exp -- Variable
 evalM (Lambda [v     ]   b) = C v b <$> ask -- Lambda base case
 evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
@@ -85,7 +86,7 @@ evalM (App (Id "+"            ) rands     ) = evaluateNumOperation (+) 0 rands
 evalM (App (Id "-"            ) rands     ) = evaluateNumOperation (-) 0 rands
 evalM (App (Id "*"            ) rands     ) = evaluateNumOperation (*) 1 rands
 evalM (App (Id "/"            ) rands     ) = evaluateNumOperation div 1 rands
-evalM (App (Id "string-append") rands     ) = evaluateStrOperation (++) "" rands
+evalM (App (Id "string-append") rands     ) = evaluateStrOperation (<>) "" rands
 evalM (App (Id "cons"         ) [car, cdr]) = do
   eCar <- evalM car
   eCdr <- evalM cdr
@@ -112,7 +113,11 @@ evalM (App rator []) = do
   case eRator of
     (T b env) -> local (const env) $ evalM b
     _ ->
-      liftEither . Left . EvalError $ "Non Thunk invocation:\n" ++ show eRator
+      liftEither
+        .  Left
+        .  EvalError
+        $  "Non Thunk invocation:\n"
+        <> (T.pack . show $ eRator)
 evalM (App rator [rand]) = do
   eRator <- evalM rator
   case eRator of
@@ -124,10 +129,14 @@ evalM (App rator [rand]) = do
         .  Left
         .  EvalError
         $  "Non function used as a function:\n"
-        ++ show rator
+        <> (T.pack . show $ rator)
 evalM (App rator (r : rands)) = evalM (App (App rator [r]) rands)
 evalM e =
-  liftEither . Left . EvalError $ "Unidentified expression:\n" ++ show e
+  liftEither
+    .  Left
+    .  EvalError
+    $  "Unidentified expression:\n"
+    <> (T.pack . show $ e)
 
 evaluateNumOperation
   :: (Int -> Int -> Int)
@@ -144,14 +153,14 @@ evaluateNumOperation op base rands = do
           .  Left
           .  EvalError
           $  " got a non numeric argument in the following operands:\n"
-          ++ show rands
+          <> (T.pack . show $ rands)
     )
     maybenums
   return . I $ Prelude.foldr op base nums
 
 evaluateStrOperation
-  :: (String -> String -> String)
-  -> String
+  :: (T.Text -> T.Text -> T.Text)
+  -> T.Text
   -> [Exp]
   -> ReaderT Env (ContT Val (Either Error)) Val
 evaluateStrOperation op base rands = do
@@ -164,7 +173,7 @@ evaluateStrOperation op base rands = do
           .  Left
           .  EvalError
           $  " got a non string argument in the following operands:\n"
-          ++ show rands
+          <> (T.pack . show $ rands)
     )
     maybestrs
   return . S $ Prelude.foldr op base strs
@@ -179,28 +188,36 @@ evalList (exp : es) env = do
   eExps <- evalList es env
   return $ eExp : eExps
 
-codeToAst :: String -> Either Error [Exp]
+codeToAst :: T.Text -> Either Error [Exp]
 codeToAst code = do
   tokens <- tokenize code
   ptree  <- parse tokens
   traverse treeToExp ptree
 
-codeToVal :: String -> Either Error [Val]
+codeToVal :: T.Text -> Either Error [Val]
 codeToVal code = do
   asts <- codeToAst code
   evalList asts defaultEnv
 
-evaluatePref :: String -> String
-evaluatePref code = either show show $ codeToVal code
+evaluatePref :: T.Text -> T.Text
+evaluatePref code = either (T.pack . show) (T.pack . show) $ codeToVal code
 
 main :: IO ()
 main = do
-  putStrLn "Enter a file path: "
-  filePath <- getLine
+  TIO.putStrLn "Enter a file path: "
+  filePath <- TIO.getLine
   withFile
-    filePath
+    (T.unpack filePath)
     ReadMode
     (\h -> do
-      fileContent <- hGetContents h
+      fileContent <- TIO.hGetContents h
       either (print . show) (mapM_ $ print . show) (codeToVal fileContent)
     )
+
+
+
+
+
+
+
+

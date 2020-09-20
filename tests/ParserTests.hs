@@ -1,73 +1,76 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module ParserTests
   ( parserTests
   )
 where
 
 import           Data.Either
+import qualified Data.Text                     as T
 import           Errors
-import           Exp
+import           Syntax.Exp
 import           Lexer
 import           Parser
 import           Test.HUnit
 
 -- These tests depend on Lexer.Tokenize
-t1 :: String
+t1 :: T.Text
 t1 = "a"
 
-t2 :: String
+t2 :: T.Text
 t2 = "()"
 
-t3 :: String
+t3 :: T.Text
 t3 = "(a)"
 
-t4 :: String
+t4 :: T.Text
 t4 = "(a a)"
 
-t5 :: String
+t5 :: T.Text
 t5 = "(lambda (a) a)"
 
-t6 :: String
+t6 :: T.Text
 t6 = "(lambda (a) (a a))"
 
-t7 :: String
+t7 :: T.Text
 t7 = "(let ((a) (b b)) (a a))"
 
-t8 :: String
+t8 :: T.Text
 t8 = "(let ((a) (b b)) (a a)) (a)"
 
-t9 :: String
+t9 :: T.Text
 t9 = "(let ((a) (b b)) (a a)) (define a) (a a)"
 
-t10 :: String
+t10 :: T.Text
 t10 = "(let ((b b)) (a a)) (define a) (a a)"
 
-t11 :: String
+t11 :: T.Text
 t11 = "(a b c d)"
 
-t12 :: String
+t12 :: T.Text
 t12 = "(lambda (a b c d) e)"
 
-t13 :: String
+t13 :: T.Text
 t13 = "(lambda () a)"
 
-t14 :: String
+t14 :: T.Text
 t14 = "(lambda (()) a)"
 
-t15 :: String
+t15 :: T.Text
 t15 = "(let ((a a) (b b) (c c) (d d)) e)"
 
-t16 :: String
+t16 :: T.Text
 t16 =
   "(let ((x (add1 2))\
               \(y (sub1 x))\
               \(z (fact 5))) (+ x y z))"
 
-errorMsg :: String
+errorMsg :: T.Text
 errorMsg = " parsed incorrectly"
 
 allTests :: [Test]
 allTests =
-  [ TestCase $ assertEqual (testCase ++ errorMsg)
+  [ TestCase $ assertEqual (show $ testCase <> errorMsg)
                            ex
                            (parse . fromRight [] . tokenize $ testCase)
   | (testCase, ex) <-
@@ -163,13 +166,13 @@ allTests =
     ]
   ]
 
-expErrorMsg :: String
+expErrorMsg :: T.Text
 expErrorMsg = " converted to exp incorrectly."
 
 allExpTests :: [Test]
 allExpTests =
   [ TestCase $ assertEqual
-      (testCase ++ expErrorMsg)
+      (show $ testCase <> expErrorMsg)
       ex
       (map treeToExp (fromRight [] $ tokenize testCase >>= parse))
   | (testCase, ex) <-
@@ -239,13 +242,13 @@ allExpTests =
     ]
   ]
 
-failureMsg :: String
+failureMsg :: T.Text
 failureMsg = " did not trigger an error"
 
 allFails :: [Test]
 allFails =
   [ TestCase $ assertBool
-      (f ++ failureMsg)
+      (show $ f <> failureMsg)
       (case parse . fromRight [] . tokenize $ f of
         (Left  _) -> True
         (Right _) -> False
