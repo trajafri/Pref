@@ -2,6 +2,7 @@
 
 module Main where
 
+import           Data.List
 import qualified Data.Text                     as T
 import           Options.Applicative
 import qualified Pref                          as P
@@ -17,7 +18,7 @@ eval :: String -> IO ()
 eval sourcePath = do
   fileContent <- readFile sourcePath
   maybeAst    <- return $ P.codeToVal (T.pack fileContent)
-  putStr $ either show (either show $ unwords . map show) maybeAst
+  putStr $ either show (either show $ intercalate "\n" . map show) maybeAst
   putStrLn ""
 
 main :: IO ()

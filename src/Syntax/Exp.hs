@@ -7,7 +7,8 @@ import qualified Data.Text                     as T
 import           Data.Text.Prettyprint.Doc
 
 data Exp
-  = Id T.Text
+  = Empty
+  | Id T.Text
   | NLiteral Int
   | SLiteral T.Text
   | Lambda [T.Text]
@@ -28,7 +29,8 @@ indentC = 2
 
 instance Pretty Exp where
 
-  pretty (Id       s) = pretty s
+  pretty (Id s)       = pretty s
+  pretty Empty        = pretty "empty"
   pretty (NLiteral n) = pretty $ show n
   pretty (SLiteral s) = pretty s
   pretty (Lambda v b) =

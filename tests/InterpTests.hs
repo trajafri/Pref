@@ -11,26 +11,26 @@ import qualified Data.Text                     as T
                                          hiding ( zip )
 import           Syntax.Exp
 import           Pref
-import           Test.HUnit
+import           Test.Tasty
+import           Test.Tasty.HUnit
 
-defaultEnv :: Map T.Text Val
-defaultEnv = insert "empty" E empty
+defaultEnv :: Env
+defaultEnv = Env $ insert "empty" (Empty, Env empty) empty
 
 errorMsg :: T.Text
 errorMsg = " interpreted incorrectly"
 
-allTests :: [Test]
+allTests :: [Assertion]
 allTests =
-  [ TestCase $ assertEqual
-      (show $ testCase <> errorMsg)
-      [e]
-      (either (\_ -> []) (fromRight []) $ codeToVal testCase)
-  | (testCase, e) <-
+  [ assertEqual (show $ test <> errorMsg)
+                [e]
+                (either (\_ -> []) (fromRight []) $ codeToVal test)
+  | (test, e) <-
     [ ("1"                          , I 1)
     , ("\"a\""                      , S "a")
     , ("(lambda (x) 2)"             , C "x" (NLiteral 2) defaultEnv)
     , ("((lambda (x) 2) 3)"         , I 2)
-    , ("((lambda (x) 2) 3)"         , I 2)
+    , ("((lambda (x) x) 3)"         , I 3)
     , ("((lambda (x y z) z) 3 4 5)" , I 5)
     , ("(let ((x 1) (y 2) (z 3)) z)", I 3)
     , ("((lambda () 2))"            , I 2)
@@ -50,8 +50,9 @@ allTests =
     ]
   ]
 
-interpTestList :: Test
-interpTestList = TestList
-  [ TestLabel ("test " ++ show i) t
+interpTestList :: TestTree
+interpTestList = testGroup
+  "Interpreter tests"
+  [ testCase ("test " ++ show i) t
   | (i, t) <- zip ([1, 2 ..] :: [Int]) allTests
   ]

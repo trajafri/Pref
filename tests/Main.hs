@@ -1,16 +1,10 @@
 import           CpserTests
 import           InterpTests
 import           ParserTests
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.HUnit
+import           Test.Tasty
 
-tests :: [Test.Framework.Test]
-tests = hUnitTestToTests $ TestList
-  [ TestLabel "parser tests" parserTests
-  , TestLabel "eval tests"   interpTestList
-  , TestLabel "cpser tests"  cpserTestList
-  ]
+tests :: TestTree
+tests = testGroup "Pref tests" [parserTests, interpTestList, cpserTestList]
 
 main :: IO ()
 main = defaultMain tests

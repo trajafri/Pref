@@ -69,7 +69,8 @@ letToApp x = x
    cpser handles the top level only.
    It only introduces continuation to expressions if needed -}
 cpser :: Exp -> State Collector Exp
-cpser i@(Id       _   ) = return i
+cpser i@(Id _)          = return i
+cpser e@Empty           = return e
 cpser n@(NLiteral _   ) = return n
 cpser s@(SLiteral _   ) = return s
 cpser (  Lambda vars b) = do
@@ -104,7 +105,8 @@ cpser (  Def v     b    ) = do
    It invokes the continuation provided by cpser in the lambda case.
 -}
 cpsExp :: Exp -> State Collector Exp
-cpsExp i@(Id       _) = return $ App (Id "k") [i] -- apply k to value
+cpsExp i@(Id _)       = return $ App (Id "k") [i] -- apply k to value
+cpsExp e@Empty        = return $ App (Id "k") [e] -- apply k to value
 cpsExp n@(NLiteral _) = return $ App (Id "k") [n] -- apply k to value
 cpsExp s@(SLiteral _) = return $ App (Id "k") [s] -- apply k to value
 cpsExp l@(Lambda _ _) = do
