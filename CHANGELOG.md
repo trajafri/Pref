@@ -1,6 +1,11 @@
 # Revision history for Pref
 
-## 0.3.2.1 -- 2019-08-20
+## 0.3.3.0 -- 2019-08-23
+
+* Added mutually recursive definitions
+
+
+## 0.3.2.0 -- 2019-08-20
 
 * Added recursive definitions
 * Fixed a bug where parser expected an unneccessary expression
