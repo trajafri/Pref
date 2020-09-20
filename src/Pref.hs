@@ -1,11 +1,12 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
+
 module Pref
   ( codeToAst
   , codeToVal
   , eval
   , evaluatePref
-  , main
+  , Env(..)
   , Val(..)
   )
 where
@@ -16,17 +17,20 @@ import           Control.Monad.State
 import           Data.List                     as L
 import           Data.Map                      as M
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                  as TIO
 import           Errors
 import           Syntax.Exp
 import           Parser
 import           Prelude                 hiding ( exp
                                                 , id
                                                 )
-import           System.IO
-import           Text.Parsec             hiding ( parse )
+import           Text.Parsec             hiding ( Empty
+                                                , parse
+                                                )
 
-type Env = Map T.Text Val
+newtype Env = Env {getMap :: Map T.Text (Exp, Env)} deriving (Eq, Show)
+
+insertEnv :: T.Text -> (Exp, Env) -> Env -> Env
+insertEnv k v e = Env $ M.insert k v $ getMap e
 
 data Val
   = S T.Text
@@ -34,8 +38,7 @@ data Val
   | C T.Text
       Exp
       Env
-  | T Exp --Thunk
-      Env
+  | T Exp Env --Thunk
   | Cons Val
          Val
   | E --Empty
@@ -55,27 +58,26 @@ instance Show Val where
   show E = "empty"
 
 defaultEnv :: Env
-defaultEnv = M.insert "empty" E M.empty
+defaultEnv = insertEnv "empty" (Empty, Env M.empty) $ Env M.empty
 
 eval :: Exp -> Env -> Either EvalError Val
 eval e env = (`runReaderT` env) . evalM $ e
 
 evalM :: Exp -> ReaderT Env (Either EvalError) Val
+evalM Empty        = return $ E -- EmptyList 
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (Id       v) = do
   env <- ask
-  case M.lookup v env of
-    Nothing  -> throwError . EvalError $ "Can not identify " <> v
-    Just exp -> return exp -- Variable
-evalM (Lambda [v     ]   b) = asks (C v b) -- Lambda base case
-evalM (Lambda (v : vs)   b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
-evalM (Lambda []         b) = asks (T b) -- Thunk case
-evalM (Let    [(v, val)] b) = do
-  eValue <- evalM val
-  local (M.insert v eValue) $ evalM b -- Let base case
-evalM (Let ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
-evalM (If cond thn els      ) = do
+  case M.lookup v $ getMap env of
+    Nothing              -> throwError . EvalError $ "Can not identify " <> v
+    Just (exp, localEnv) -> local (const localEnv) $ evalM exp -- Variable
+evalM (Lambda [v     ]        b) = asks (C v b) -- Lambda base case
+evalM (Lambda (v : vs)        b) = evalM $ Lambda [v] $ Lambda vs b -- Lambda currying case
+evalM (Lambda []              b) = asks (T b) -- Thunk case
+evalM (Let [(v, val)] b) = local (\env -> insertEnv v (val, env) env) $ evalM b -- Let base case
+evalM (Let    ((v, val) : vs) b) = evalM $ Let [(v, val)] $ Let vs b -- Let else case
+evalM (If cond thn els         ) = do
   eCond <- evalM cond
   case eCond of
     (I 0) -> evalM els
@@ -104,9 +106,8 @@ evalM (App (Id "empty?") [ls]) = do
   return $ case eLs of
     E -> I 1
     _ -> I 0
-evalM (App (Id "fix") [func]) =
-  evalM (Lambda ["x"] (App func [App (Id "fix") [func], Id "x"])) -- Z Combinator
-evalM (App rator []) = do
+evalM (App (Id "fix") [func]) = evalM $ App func [App (Id "fix") [func]] -- Z Combinator
+evalM (App rator      []    ) = do
   eRator <- evalM rator
   case eRator of
     (T b env) -> local (const env) $ evalM b
@@ -117,10 +118,10 @@ evalM (App rator []) = do
         <> (T.pack . show $ eRator)
 evalM (App rator [rand]) = do
   eRator <- evalM rator
+  env    <- ask
   case eRator of
-    (C v b env) -> do
-      eRand <- evalM rand
-      local (const $ M.insert v eRand env) $ evalM b
+    (C v b localEnv) -> do
+      local (const $ insertEnv v (rand, env) localEnv) $ evalM b
     _ ->
       throwError
         .  EvalError
@@ -170,8 +171,7 @@ evalList []                    _              _   = return []
 evalList (Def id binding : es) futureBindings env = do
   let newFutures   = L.drop 1 futureBindings
   let fixedBinding = topLevelFunction id newFutures binding
-  eBind <- eval fixedBinding env
-  evalList es newFutures $ M.insert id eBind env
+  evalList es newFutures $ insertEnv id (fixedBinding, env) env
  where
   topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
   topLevelFunction expId fb (Lambda ps body) = App
@@ -203,16 +203,3 @@ codeToVal code = case codeToAst code of
 evaluatePref :: T.Text -> T.Text
 evaluatePref =
   either (T.pack . show) (either (T.pack . show) (T.pack . show)) . codeToVal
-
-main :: IO ()
-main = do
-  TIO.putStrLn "Enter a file path: "
-  filePath <- TIO.getLine
-  withFile
-    (T.unpack filePath)
-    ReadMode
-    (\h -> do
-      fileContent <- TIO.hGetContents h
-      either (print . show) (either (print . show) $ mapM_ $ print . show)
-        $ codeToVal fileContent
-    )

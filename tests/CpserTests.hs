@@ -10,7 +10,8 @@ import           Data.Either
 import qualified Data.Text                     as T
 import           Syntax.Exp
 import           Pref
-import           Test.HUnit
+import           Test.Tasty
+import           Test.Tasty.HUnit
 import           Transform.CPS
 
 errorMsg :: T.Text
@@ -19,13 +20,12 @@ errorMsg = " cpsed incorrectly"
 getAst :: T.Text -> Exp
 getAst = head . fromRight [Id "error"] . codeToAst
 
-allTests :: [Test]
+allTests :: [Assertion]
 allTests =
-  [ TestCase $ assertEqual
-      (show $ testCase <> errorMsg)
-      (getAst e)
-      (fst . flip runState Unit $ cpser . getAst $ testCase)
-  | (testCase, e) <-
+  [ assertEqual (show $ test <> errorMsg)
+                (getAst e)
+                (fst . flip runState Unit $ cpser . getAst $ test)
+  | (test, e) <-
     [ ("1", "1")
     , ("\"S\"", "\"S\"")
     , ("x", "x")
@@ -108,8 +108,9 @@ allTests =
     ]
   ]
 
-cpserTestList :: Test
-cpserTestList = TestList
-  [ TestLabel ("test " ++ show i) t
+cpserTestList :: TestTree
+cpserTestList = testGroup
+  "CPSer tests"
+  [ testCase ("test " ++ show i) t
   | (i, t) <- zip ([1, 2 ..] :: [Int]) allTests
   ]
