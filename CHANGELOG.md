@@ -2,6 +2,11 @@
 
 ## 0.2.1.1 -- 2019-07-05
 
+* Use DList instead of regular list in Transfrom.CPS
+* Add note in Transform.CPS regards its assumptions
+
+## 0.2.1.1 -- 2019-07-05
+
 * Remove ContT usage in Pref
 
 ## 0.2.1.0 -- 2019-07-05

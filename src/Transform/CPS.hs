@@ -4,11 +4,14 @@ module Transform.CPS where
 
 import           Control.Monad.Stack.State
 import           Control.Monad.State
+import           Data.DList
 import           Data.Functor.Identity
 import qualified Data.Text                     as T
 import           Syntax.Exp
 
--- TODO, maybe fix reverse by DList?
+{- NOTE: This CPSer does not account for currying done
+         by interpreter
+-}
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
   let (vars, vals) = unzip bindings in App (Lambda vars b) vals
@@ -71,11 +74,11 @@ cpsExp (Def _ _) = undefined --Language can't have definitions in a lambda
   * Int is for the argument number (currently, it goes like arg0, arg1, arg2 ...)
   * [Exp] is for the final result of each exp. If something is CPSed, then
     it's final result will be some argn. -}
-type AppCPSer = StateT Int (StateT [Exp] Identity) ((Exp -> Exp) -> Exp)
+type AppCPSer = StateT Int (StateT (DList Exp) Identity) ((Exp -> Exp) -> Exp)
 
-type AppCPSerResult = (((Exp -> Exp) -> Exp, Int), [Exp])
+type AppCPSerResult = (((Exp -> Exp) -> Exp, Int), DList Exp)
 
-runAppCPSer :: Int -> [Exp] -> AppCPSer -> AppCPSerResult
+runAppCPSer :: Int -> DList Exp -> AppCPSer -> AppCPSerResult
 runAppCPSer i ls = runIdentity . (`runStateT` ls) . (`runStateT` i)
 
 getLastIndex :: AppCPSerResult -> Int
@@ -91,7 +94,7 @@ cpsApp [] = do
   exps <- liftState get
   i    <- get
   let finalResult = "arg" <> (T.pack . show $ i)
-  let (e : es)    = reverse exps -- since we were consing items, gotta reverse here
+  let (e : es)    = toList exps
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
   let finalFunc handleResult = App e $ es ++ [finalExp handleResult]
@@ -100,8 +103,9 @@ cpsApp [] = do
              create the last lambda, and wait for its body. -}
 cpsApp (App rator rands : exs) = do
   count <- get
-  let ((currExpCont, i), _) = runAppCPSer count [] . cpsApp $ (rator : rands)
-  liftState . modify $ (Id ("arg" <> (T.pack . show $ i)) :) -- This the result of the whole application
+  let ((currExpCont, i), _) =
+        runAppCPSer count empty . cpsApp $ (rator : rands)
+  liftState . modify $ (flip snoc $ Id ("arg" <> (T.pack . show $ i))) -- This the result of the whole application
   modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
@@ -111,13 +115,13 @@ cpsApp (App rator rands : exs) = do
                                 expression using its final values -} {- result of nextExps becomes the body of
                                      the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  liftState . modify $ (cpser simpleExp :) -- The result is the expression itself
+  liftState . modify $ (flip snoc $ cpser simpleExp) -- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> Exp
 extractCpsAppExp rator rands handleFinalArg =
   ($ handleFinalArg)
     . getLastArgHandler
-    . runAppCPSer 0 []
+    . runAppCPSer 0 empty
     . cpsApp
     $ (rator : rands)
