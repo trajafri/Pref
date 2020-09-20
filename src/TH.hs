@@ -72,12 +72,12 @@ prefDefQ code = either qError expsToHs $ runParser parse () "" $ T.pack code
  where
   qError :: ParseError -> Q [Dec]
   qError pe =
-    error ("error while parsing Pref in declaration form:\n" ++ (show pe))
+    error ("error while parsing Pref in declaration form:\n" ++ show pe)
 
 
   expsToHs :: [E.Exp] -> Q [Dec]
   expsToHs es | length es /= 1 = error "expected exactly one pref declaration"
-              | otherwise      = (flip (:) []) <$> (defToHs $ head es)
+              | otherwise      = flip (:) [] <$> defToHs (head es)
 
   defToHs :: E.Exp -> Q Dec
   defToHs (E.Def n b) = prefExpToHs b >>= \hsBody ->

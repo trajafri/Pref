@@ -1,0 +1,9 @@
+(cons 1 (cons 2 (cons 3 (cons 4 (cons 5 (cons 6 empty))))))
+(cons  empty
+  (cons (cons 3 empty) 
+    (cons (cons 2 empty) 
+      (cons (cons 2 (cons 3 empty))
+        (cons (cons 1 empty)
+          (cons (cons 1 (cons 3 empty))
+            (cons (cons 1 (cons 2 empty)) 
+              (cons (cons 1 (cons 2 (cons 3 empty))) empty))))))))

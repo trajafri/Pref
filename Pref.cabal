@@ -1,5 +1,5 @@
 name:                Pref
-version:             0.4.1.0
+version:             0.5.0.0
 license:             BSD3
 license-file:        LICENSE
 author:              Turab Jafri
@@ -11,20 +11,20 @@ library
   hs-source-dirs:      src
   exposed-modules:     Pref,
                        Syntax.Exp,
-                       TH,
+                       TH, 
+                       Transform.Uniquify,
                        Transform.CPS
   other-modules:       Example.THExample
                        Errors ,
                        Lexer ,
                        Parser
-  build-depends:       base >=4.12 && <4.13,
+  build-depends:       base >=4.12 && <4.14,
                        containers,
                        dlist ==0.8.*,
-                       effect-stack ==0.1.*,
                        mtl >= 2.2.2,
                        parsec ==3.1.*,
                        prettyprinter >= 1.3.0,
-                       template-haskell >= 2.14 && <2.15,
+                       template-haskell >= 2.14 && <2.16,
                        text >= 1.2.3
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -35,7 +35,7 @@ library
 
 executable cps
   main-is:             src/CpsApp.hs
-  build-depends:       base >=4.12 && <4.13,
+  build-depends:       base >=4.12 && <4.14,
                        Pref >=0.3.0.0,
                        mtl >= 2.2.2,
                        optparse-applicative ^>= 0.15.0,
@@ -49,7 +49,7 @@ executable cps
 
 executable pref
   main-is:             src/Main.hs
-  build-depends:       base >=4.12 && <4.13,
+  build-depends:       base >=4.12 && <4.14,
                        Pref >=0.3.0.0,
                        mtl >= 2.2.2,
                        optparse-applicative ^>= 0.15.0,
@@ -65,14 +65,17 @@ test-suite pref-tests
   type:                exitcode-stdio-1.0
   hs-source-dirs:      tests
   main-is:             Main.hs
-  other-modules:       CpserTests ,
-                       ParserTests ,
-                       InterpTests
+  other-modules:       ParserTests,
+                       InterpTests,
+                       Transform.CpserTests,
+                       Transform.UniquifyTests
   build-depends:       Pref,
-                       base >=4.12 && <4.13,
+                       base >=4.12 && <4.14,
                        containers,
+                       filepath >=1.4.2 && <1.5,
                        mtl >= 2.2.2,
                        tasty >= 1.2.3 && < 1.3.0,
+                       tasty-golden >= 2.3.3 && < 2.4,
                        tasty-hunit >= 0.10.0 && < 0.11.0,
                        text >= 1.2.3
   default-language:    Haskell2010

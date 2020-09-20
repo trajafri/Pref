@@ -1,0 +1,3 @@
+(define f.0 (lambda (x.0) (if (zero? x.0) 1 (* x.0 (f.0 (- x.0 1))))))
+
+(lambda (x.1 x.2 x.3 x.4) x.4)

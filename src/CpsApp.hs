@@ -29,8 +29,9 @@ cps :: (Bool, String) -> IO ()
 cps (defineFree, fp) = do
   let collector = if defineFree then FreeAndScoped [] [] else Unit
   fileContent <- readFile fp
-  ast <- either (fail "Provided file should be syntatically correct.") return
-    $ P.codeToAst (T.pack fileContent)
+  ast         <-
+    either (const $ fail "Provided file should be syntatically correct.") return
+      $ P.codeToAst (T.pack fileContent)
   let (cpsedExps, collection) = flip runState collector $ mapM cpser ast
   let cpsedFile               = intercalate "\n" $ map show cpsedExps
   let definitions =

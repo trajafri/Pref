@@ -3,7 +3,6 @@
 
 module Transform.CPS where
 
-import           Control.Monad.Stack.State
 import           Control.Monad.State
 import           Data.DList
 import           Data.List               hiding ( head
@@ -145,64 +144,67 @@ cpsExp (Def _ _) = undefined --can't have definitions in a lambda yet
     it's final result will be some argn. -}
 type K = ((Exp -> Exp) -> Exp)
 
-type AppCPSer = StateT Int (StateT (DList Exp) (State Collector)) K
+type AppCPSer = State (Int, DList Exp, Collector) K
 
-type AppCPSerResult = (((K, Int), DList Exp), Collector)
+type AppCPSerResult = (K, (Int, DList Exp, Collector))
 
 runAppCPSer :: Int -> DList Exp -> Collector -> AppCPSer -> AppCPSerResult
-runAppCPSer i ls c = (`runState` c) . (`runStateT` ls) . (`runStateT` i)
+runAppCPSer i ls c = flip runState (i, ls, c)
 
 getLastIndex :: AppCPSerResult -> Int
-getLastIndex = snd . fst . fst
+getLastIndex = (\(a, _, _) -> a) . snd
 
 getLastArgHandler :: AppCPSerResult -> K
-getLastArgHandler = fst . fst . fst
+getLastArgHandler = fst
 
 getCollection :: AppCPSerResult -> Collector
-getCollection = snd
+getCollection = thd . snd
+
+thd :: (a, b, c) -> c
+thd (_, _, c) = c
 
 {- The following function CPSes the application case
     as shown in the example above -}
 cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
-  exps <- liftState get
-  i    <- get
+  exps <- gets $ \(_, a, _) -> a
+  i    <- gets $ \(a, _, _) -> a
   let finalResult = "arg" <> (T.pack . show $ i)
   let e           = head exps
   let es          = toList . tail $ exps
   case e of
-    Id x -> liftState . liftState . modify $ collect (x, length es)
+    Id x -> modify $ \(a, b, c) -> (a, b, collect (x, length es) c)
     _    -> return ()
-  collection <- liftState . liftState $ get
+  collection <- gets thd
   let adjustedE = getFixedExp e collection
   let finalExp handleResult =
         Lambda [finalResult] . handleResult . Id $ finalResult
   let finalFunc handleResult = App adjustedE $ es ++ [finalExp handleResult]
-  liftState . liftState . modify $ updateVars [finalResult]
+  modify $ \(a, b, c) -> (a, b, updateVars [finalResult] c)
   return finalFunc {- Here, we reconstruct the original application from the
                                  accumulated bindings for each expression in the application,
                                  create the last lambda, and wait for its body. -}
 -- In this case, we cps the application with a new AppCPSer, and construct the whole
 -- expression using its final values
 cpsApp (App rator rands : exs) = do
-  vars <- liftState get
-  liftState . modify $ const empty -- This is because we want to start with a fresh list
+  vars <- gets $ \(_, b, _) -> b
+  modify $ \(a, _, c) -> (a, empty, c) -- This is because we want to start with a fresh list
   currExpCont <- cpsApp (rator : rands) -- CPS the application, and get the cont function
-  liftState . modify $ const vars
-  i <- get
-  liftState . modify $ flip snoc (Id ("arg" <> (T.pack . show $ i))) -- This is the result of the whole application
-  modify (const $ succ i) -- If argn was used by last, the next should start with arg(n+1)
+  modify $ \(a, _, c) -> (a, vars, c)
+  i <- gets $ \(a, _, _) -> a
+  modify $ \(a, b, c) -> (a, snoc b (Id ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
+  modify $ \(a, b, c) -> ((const $ succ i) a, b, c) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
   let nextExps handleCont = const $ nextExpsCont handleCont
   return $ currExpCont . nextExps
 {- result of nextExps becomes the body of the last continuation of (App rator rands)! -}
 cpsApp (simpleExp : exs) = do
-  collection <- liftState . liftState $ get
+  collection <- gets thd
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
-  liftState . liftState . put $ updatedCollection
-  liftState . modify $ flip snoc cpsedSimpleExp-- The result is the expression cpsed
+  modify $ \(a, b, _) -> (a, b, updatedCollection)
+  modify $ \(a, b, c) -> (a, snoc b cpsedSimpleExp, c)-- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> State Collector Exp

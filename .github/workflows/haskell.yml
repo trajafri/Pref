@@ -2,9 +2,9 @@ name: Pref CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
     - uses: actions/setup-haskell@v1
       with:
         ghc-version: '8.6.5'
-        cabal-version: '2.4'
+        cabal-version: '3.2'
 
     - name: Cache
       uses: actions/cache@v1
@@ -37,4 +37,4 @@ jobs:
     - name: Build
       run: cabal new-build --enable-tests --enable-benchmarks all
     - name: Run tests
-      run: cabal new-test all
+      run: cabal new-test --test-show-details='always' --test-options=--color='always' all
