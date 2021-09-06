@@ -242,11 +242,14 @@ prepareDefaultBindings =
           , ("/"            , createBinary safeDiv)
           , ("string-append", createBinary safeAppend)
           , ("cons"         , createBinary safeCons)
+          , ("and"          , createBinary safeAnd)
+          , ("or"           , createBinary safeOr)
           , ("car"          , createUnary safeCar)
           , ("cdr"          , createUnary safeCdr)
           , ("zero?"        , createUnary zeroHuh)
           , ("empty?"       , createUnary emptyHuh)
           , ("fix"          , createUnary safeFix)
+          , ("not"          , createUnary safeNot)
           ]
       (defaultEnv, memoryTable) = Prelude.foldr
         (\(func, val) (e, m) ->
@@ -283,7 +286,6 @@ prepareDefaultBindings =
     v2 <- getMemoizedValue "1"
     binOp v1 v2
 
-
   createUnary unOp = createBuiltIn 1 $ do
     v1 <- getMemoizedValue "1"
     unOp v1
@@ -312,6 +314,14 @@ prepareDefaultBindings =
   safeCons :: MemVal -> MemVal -> EStack MemVal
   safeCons a b = return $ Cons a b
 
+  safeAnd :: MemVal -> MemVal -> EStack MemVal
+  safeAnd a@(B False) _ = return a
+  safeAnd _           b = return b
+
+  safeOr :: MemVal -> MemVal -> EStack MemVal
+  safeOr (B False) b = return b
+  safeOr a         _ = return a
+
   safeCar :: MemVal -> EStack MemVal
   safeCar (Cons a _) = return a
   safeCar _          = throwError . EvalError $ "Expected a list"
@@ -331,25 +341,21 @@ prepareDefaultBindings =
   safeFix :: MemVal -> EStack MemVal
   safeFix (C identifier (PrefE b) env) = do
     -- we do the following to allow circular mapping:
-    -- * get the memory address `M` bound to "1"
-    -- * create a closure with environment that maps `identifier` to itself (at `M`)
-    -- * place closure at `M`
-    -- * evaluate the body
-    --env <- ask
-    --let selfApp = App (Id "1") [Id "x"]
-    --(uMem, memId) <- gets $ insertMem (Computation selfApp env)
-    --put uMem
-    --let fixedEnv = insertEnv "x" memId env
-    --modify $ updateMem memId (Computation selfApp fixedEnv)
-    --local (const fixedEnv) $ evalM selfApp
+    -- * store closure's body at memory address `M`
+    -- * bind closure's identifier to `M`
+    -- * update computation at `M` to use environment that maps
+    --   `identifier` to `M` (itself)
+    -- * evaluate body with the "fixed" environment mentioned above
     (uMem, memId) <- gets $ insertMem (Computation b env)
     put uMem
     let fixedEnv = insertEnv identifier memId env
     modify $ updateMem memId (Computation b fixedEnv)
     local (const fixedEnv) $ evalM b
-
-
   safeFix _ = throwError . EvalError $ "fix expects a non-zero arity function"
+
+  safeNot :: MemVal -> EStack MemVal
+  safeNot (B False) = return $ B True
+  safeNot _         = return $ B False
 
 
 --TODO: Memory can be updated by top-level expressions in cbr
