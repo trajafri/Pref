@@ -40,7 +40,10 @@ expParser =
 
  where
   idParser :: Parsec T.Text () Exp
-  idParser = identifier >>= (return . Id)
+  idParser = do
+    ident <- identifier
+    let val = if ident == "empty" then Syntax.Exp.Empty else (Id ident) 
+    return val
 
   boolParser :: Parsec T.Text () Exp
   boolParser = bool >>= (return . BLiteral)
