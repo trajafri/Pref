@@ -138,7 +138,6 @@ evalM (App rator []) = do -- Thunk application
 evalM (App rator (rand : rands)) = do -- Function application
   ratorVal <- evalM rator
   applyClosure ratorVal rand rands
-
 evalM (Def _ _) =
   throwError
     . EvalError
@@ -148,21 +147,19 @@ evalM (Def _ _) =
 --------------------------------------------------------------------
 
 applyClosure :: MemVal -> Exp -> [Exp] -> EStack MemVal
-applyClosure (C identifier body env) rand args = do
+applyClosure (C identifier body env) rand remainingRands = do
   memAddress <- memoize rand
   let localEnv = insertEnv identifier memAddress env
-  let doApplication = case body of
-        (PrefE exp) -> case args of
-          []       -> local (const localEnv) $ evalM exp
-          (r : rs) -> do
-            clos <- local (const localEnv) $ evalM exp
-            applyClosure clos r rs
-        (InterpE comp) -> case args of
-          []       -> local (const localEnv) comp
-          (r : rs) -> do
-            clos <- local (const localEnv) comp
-            applyClosure clos r rs
-  doApplication
+  -- Note: the variable below just tells us how to run the computation
+  --       to evaluate the closure's body. It doesn't actually run it
+  let evalBody = local (const localEnv) $ case body of
+        (PrefE   exp ) -> evalM exp
+        (InterpE comp) -> comp
+  case remainingRands of
+    []       -> evalBody -- no more arguments, so just return whatever body returns
+    (r : rs) -> do       -- body better return a closure. Apply it to rest of rands
+      clos <- evalBody
+      applyClosure clos r rs
 applyClosure _ _ _ =
   throwError
     . EvalError
