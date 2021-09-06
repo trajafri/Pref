@@ -141,16 +141,9 @@ evalM (Let bindings body) = do
   local (const updatedEnv) $ evalM body
  where
   pushToEnv :: (Env Int) -> (T.Text, Exp) -> EStack (Env Int)
-  pushToEnv newEnv (identifier, (Id var)) = do
-    -- A bound variable, therefore it's a computation we have seen before.
-    -- be careful and make sure the computation isn't evaluated (to stay lazy)
-    memAdd <- resolveIdentifier var
-    return $ insertEnv identifier memAdd newEnv
   pushToEnv newEnv (identifier, exp) = do
-    env                           <- ask
-    (updatedMemTable, memAddress) <- gets $ insertMem (Computation exp env)
-    put updatedMemTable
-    return $ insertEnv identifier memAddress newEnv
+    memAdd <- getMemoizedVal exp
+    return $ insertEnv identifier memAdd newEnv
 evalM (If cond thn els) = do
   eCond <- evalM cond
   case eCond of
@@ -171,17 +164,9 @@ evalM (Def _ _) =
     $ "A non-top level `defined` expression is not supported"
 
 functionApplication :: MemVal -> Exp -> [Exp] -> EStack MemVal
-functionApplication ratorVal rand rands = case rand of
-  Id var -> do -- A bound variable, therefore it's a computation we have seen before.
-               -- be careful and make sure the computation isn't evaluated (to stay lazy)
-    memAddress <- resolveIdentifier var
-    applyClosure ratorVal memAddress rands
-  _ -> do
-    currEnv                       <- ask
-    (updatedMemTable, memAddress) <- gets $ insertMem (Computation rand currEnv)
-    put updatedMemTable
-    applyClosure ratorVal memAddress rands
-
+functionApplication ratorVal rand rands = do
+  memAddress <- getMemoizedVal rand
+  applyClosure ratorVal memAddress rands
 
 
 applyClosure :: MemVal -> MemAddress -> [Exp] -> (EStack MemVal)
@@ -191,8 +176,8 @@ applyClosure (C identifier body env) address args = do
   --       but is a computation that tells us to compute the final value
   let doApplication = case body of
         (PrefE exp) -> case args of
-          [] -> local (const localEnv) $ evalM exp
-          (r : rs)  -> do
+          []       -> local (const localEnv) $ evalM exp
+          (r : rs) -> do
             clos <- local (const localEnv) $ evalM exp
             functionApplication clos r rs
         (InterpE comp) -> case args of
@@ -224,6 +209,21 @@ memoizeIdVal identifier = do
       return val
     Just (Computed value) -> return value
     Nothing -> throwError . EvalError $ "Memory error " <> identifier
+
+-- If given a variable, get's the memory address for the value it points to
+-- Else, places the exp in the memory table and returns its memory address
+getMemoizedVal :: Exp -> EStack MemAddress
+getMemoizedVal (Id var) = do
+  -- A bound variable, therefore it's a computation we have seen before.
+  -- be careful and make sure the computation isn't evaluated (to stay lazy)
+  memAddress <- resolveIdentifier var
+  return memAddress
+getMemoizedVal exp = do
+  currEnv                       <- ask
+  (updatedMemTable, memAddress) <- gets $ insertMem (Computation exp currEnv)
+  put updatedMemTable
+  return memAddress
+
 
 
 throwUnboundVariableError :: T.Text -> (EStack v)
