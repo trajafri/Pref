@@ -134,7 +134,11 @@ evalM (App rator []) = do -- Thunk application
   ratorVal <- evalM rator
   case ratorVal of
     (T body env) -> local (const env) $ evalM body
-    _            -> throwBadApplicationError
+    _ ->
+      throwError
+        . EvalError
+        $ "Bad application\nA thunk was applied to arguments"
+
 evalM (App rator (rand : rands)) = do -- Function application
   ratorVal <- evalM rator
   applyClosure ratorVal rand rands
@@ -162,8 +166,9 @@ applyClosure (C identifier body env) rand remainingRands = do
       applyClosure clos r rs
 applyClosure _ _ _ =
   throwError
-    . EvalError
-    $ "Bad application\nA non-function was applied like a function?"
+    .  EvalError
+    $  "Bad application\nA non-function was used like a function"
+    <> "\nPerhaps a function was applied to too many arguments?"
 
 -- Given a variable, if its value is already computed, simply return it,
 -- Else, compute it, memoize it, and return it
@@ -177,7 +182,7 @@ getMemoizedValue identifier = do
       modify $ updateMem memAddress (Computed val)
       return val
     Just (Computed value) -> return value
-    Nothing -> throwError . EvalError $ "Memory error " <> identifier
+    Nothing -> throwError . EvalError $ "<Internal Memory error>" <> identifier
 
 -- If given a variable, get's the memory address for the value it points to
 -- Else, places the exp in the memory table and returns its memory address
@@ -198,8 +203,13 @@ resolveIdentifier :: T.Text -> EStack Int
 resolveIdentifier identifier = do
   env <- ask
   case getVal identifier env of
-    Just v  -> return v
-    Nothing -> throwUnboundVariableError identifier
+    Just v -> return v
+    Nothing ->
+      throwError
+        .  EvalError
+        $  "Can not identify variable '"
+        <> identifier
+        <> "'"
 
 insertEnv :: T.Text -> d -> Env d -> Env d
 insertEnv k b = Env . M.insert k b . getMap
@@ -219,16 +229,6 @@ updateMem id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
 
 getMemMapping :: Int -> Mem a -> Maybe a
 getMemMapping id (Mem m _) = M.lookup id m
-
-throwUnboundVariableError :: T.Text -> (EStack v)
-throwUnboundVariableError identifier =
-  throwError . EvalError $ "Can not identify variable '" <> identifier <> "'"
-
-throwBadApplicationError :: (EStack MemVal)
-throwBadApplicationError =
-  throwError
-    . EvalError
-    $ "Bad application\nPerhaps a function was applied to too many arguments?"
 
 -- Setup for usage
 -----------------------------------------------------------------
