@@ -31,17 +31,21 @@ allTests =
                 [e]
                 (either (\_ -> []) (fromRight []) $ codeToVal test)
   | (test, e) <-
-    [ ("1"                          , I 1)
-    , ("\"a\""                      , S "a")
-    , ("(lambda (x) 2)"             , C "x" (NLiteral 2) defaultEnv)
-    , ("((lambda (x) 2) 3)"         , I 2)
-    , ("((lambda (x) x) 3)"         , I 3)
-    , ("((lambda (x y z) z) 3 4 5)" , I 5)
-    , ("(let ((x 1) (y 2) (z 3)) z)", I 3)
-    , ("((lambda () 2))"            , I 2)
+    [ ("1"    , I 1)
+    , ("\"a\"", S "a")
+    , ( "(lambda (x) 2)"
+      , C "x" (PrefE $ NLiteral 2) (fst prepareDefaultBindings)
+      )
+    , ("((lambda (x) 2) 3)"                 , I 2)
+    , ("((lambda (x) x) 3)"                 , I 3)
+    , ("((lambda (x y z) z) 3 4 5)"         , I 5)
+    , ("(let ((x 1) (y 2) (z 3)) z)"        , I 3)
+    , ("((lambda () 2))"                    , I 2)
     , ("(string-append \"Hello\" \"World\")", S "HelloWorld")
-    , ("(string-append \"Hello\" \" \" \"World\")", S "Hello World")
-    , ("(define five 5) five"       , I 5)
+    , ( "(string-append \"Hello\" (string-append \" \" \"World\"))"
+      , S "Hello World"
+      )
+    , ("(define five 5) five", I 5)
     , ("(fix (lambda (fact x) (if (zero? x) 1 (* x (fact (- x 1))))) 5)", I 120)
     , ( "(fix (lambda (fib last curr n)\
                           \ (if (zero? (- n 2)) curr (fib curr (+ last curr) (- n 1)))) 1 1 6)"

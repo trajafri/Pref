@@ -16,6 +16,6 @@
   (fix (lambda (powerset ls)
          (if (empty? ls) (cons empty empty)
              (append (powerset (cdr ls))
-                     (map (lambda (x) (cons (car ls) x)) (powerset (cdr ls))))))))
+                     (map (cons (car ls)) (powerset (cdr ls))))))))
 
 (powerset (cons 1 (cons 2 (cons 3 empty))))

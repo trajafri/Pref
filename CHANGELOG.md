@@ -1,5 +1,12 @@
 # Revision history for Pref
 
+## 0.6.0.0 -- 2021-09-06
+
+* Allow built-in functions to be used like normal functions
+* Make `let` behave like Racket's `let` (i.e., binding `n`
+  doesn't have binding `n-1` in scope)
+* Remove n-ary operators (allows currying built-in operators)
+
 ## 0.5.0.0 -- 2020-06-10
 
 * Make Pref call-by-need (Lazy)
