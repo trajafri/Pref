@@ -5,7 +5,6 @@ module Parser
   )
 where
 
-import           Control.Monad.Except
 import qualified Data.Text                     as T
 import           Lexer
 import           Syntax.Exp
@@ -28,7 +27,7 @@ parse =
         ident <- identifier
         whiteSpace
         Def ident <$> expParser
-      _ -> mzero
+      _ -> parserZero 
 
   failIfRight :: Parsec T.Text () Exp
   failIfRight = string ")" >> unexpected "dangling right paren"
@@ -67,7 +66,7 @@ expParser =
         res <- Lambda vars <$> expParser
         whiteSpace
         return res
-      _ -> mzero
+      _ -> parserZero
 
   letParser :: Parsec T.Text () Exp
   letParser = try $ do
@@ -89,7 +88,7 @@ expParser =
         res <- Let bindings <$> expParser
         whiteSpace
         return res
-      _ -> mzero
+      _ -> parserZero
 
   ifParser :: Parsec T.Text () Exp
   ifParser = try $ do
@@ -104,7 +103,7 @@ expParser =
         thn <- expParser
         whiteSpace
         If cond thn <$> expParser
-      _ -> mzero
+      _ -> parserZero
 
   appParser :: Parsec T.Text () Exp
   appParser = do
