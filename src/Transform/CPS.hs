@@ -171,7 +171,7 @@ cpsApp [] = do
   i    <- gets $ \(a, _, _) -> a
   let finalResult = "arg" <> (T.pack . show $ i)
   let e           = head exps
-  let es          = toList . tail $ exps
+  let es          = tail exps
   case e of
     Id x -> modify $ \(a, b, c) -> (a, b, collect (x, length es) c)
     _    -> return ()

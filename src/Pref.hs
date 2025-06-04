@@ -13,6 +13,7 @@ module Pref
   )
 where
 
+import           Control.Monad
 import           Control.Monad.Except --For throwError
 import           Control.Monad.State
 import           Control.Monad.Reader
