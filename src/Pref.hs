@@ -43,8 +43,6 @@ data Mem d = Mem
     getCounter :: Int
   }
 
-type Identifier = T.Text
-
 newtype Env = Env {getMap :: M.Map Identifier MemAddress} deriving (Eq, Show)
 
 data Val
@@ -53,7 +51,7 @@ data Val
   | B Bool
   | -- | Closure
     -- Note that a closure doesn't contain an `Exp`
-    C T.Text PrefComputation Env
+    C Identifier PrefComputation Env
   | -- | Thunk
     T [Exp] Env
   | Cons Val Val
@@ -67,7 +65,7 @@ instance Show Val where
   show (S s) = T.unpack s
   show (I i) = show i
   show (B b) = show b
-  show (C s _ _) = "<lambda:" <> T.unpack s <> ">"
+  show (C (Var s) _ _) = "<lambda:" <> T.unpack s <> ">"
   show (T _ _) = "<thunk>"
   show ls@(Cons _ _) =
     "(list"
@@ -127,7 +125,7 @@ evalM (Let bindings [body]) = do
   updatedEnv <- foldM pushToEnv env bindings
   local (const updatedEnv) . evalM $ body
   where
-    pushToEnv :: Env -> (T.Text, Exp) -> EStack Env
+    pushToEnv :: Env -> (Identifier, Exp) -> EStack Env
     pushToEnv newEnv (identifier, exp) = do
       memAdd <- memoize exp
       return $ insertEnv identifier memAdd newEnv
@@ -160,7 +158,7 @@ evalM (Def _ _) =
 -- TODO: Memory can be updated by top-level expressions in cbr
 evalList ::
   [Exp] ->
-  [(T.Text, Exp)] ->
+  [(Identifier, Exp)] ->
   Env ->
   Mem Box ->
   Either EvalError [Val]
@@ -172,13 +170,13 @@ evalList (Def id binding : es) futureBindings env mem =
       val = memId
    in evalList es newFutures (insertEnv id val env) uMem
   where
-    topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
+    topLevelFunction :: Identifier -> [(Identifier, Exp)] -> Exp -> Exp
     topLevelFunction expId fb (Lambda [] body) =
       App
-        (App (Id "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
+        (App (Id . Var $ "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
         [NLiteral 0]
       where
-        self = "_" -- Todo: Should be a non-colliding variable
+        self = Var "_" -- Todo: Should be a non-colliding variable
         newBody =
           foldr
             (\b r -> Let (NE.singleton b) [r])
@@ -190,12 +188,12 @@ evalList (Def id binding : es) futureBindings env mem =
         fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
     topLevelFunction expId fb (Lambda ps [body]) =
       App
-        (Id "fix")
+        (Id . Var $ "fix")
         [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
     topLevelFunction _ _ (Lambda _ _) = error "Under construction"
     topLevelFunction _ _ b = b
 
-    futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]
+    futureFunctions :: [(Identifier, Exp)] -> [(Identifier, Exp)]
     futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
       modify $ drop 1
       currFutureBindings <- get
@@ -227,10 +225,8 @@ applyClosure _ _ _ =
     $ "Bad application\nA non-function was used like a function"
       <> "\nPerhaps a function was applied to too many arguments?"
 
--- Given a variable, if its value is already computed, simply return it,
--- Else, compute it, memoize it, and return it
-getMemoizedValue :: T.Text -> EStack Val
-getMemoizedValue identifier = do
+getMemoizedValue :: Identifier -> EStack Val
+getMemoizedValue identifier@(Var identifierTxt) = do
   memAddress <- resolveIdentifier identifier
   box <- gets $ getMemMapping memAddress
   case box of
@@ -240,7 +236,7 @@ getMemoizedValue identifier = do
       modify $ updateMem memAddress (Computed val)
       return val
     Just (Computed value) -> return value
-    Nothing -> throwError . EvalError $ "<Internal Memory error>" <> identifier
+    Nothing -> throwError . EvalError $ "<Internal Memory error>" <> identifierTxt
 
 -- If given a variable, get's the memory address for the value it points to
 -- Else, places the exp in the memory table and returns its memory address
@@ -256,8 +252,8 @@ memoize exp = do
   put updatedMemTable
   return memAddress
 
-resolveIdentifier :: T.Text -> EStack Int
-resolveIdentifier identifier = do
+resolveIdentifier :: Identifier -> EStack Int
+resolveIdentifier identifier@(Var identifierTxt) = do
   env <- ask
   case getVal identifier env of
     Just v -> return v
@@ -265,13 +261,13 @@ resolveIdentifier identifier = do
       throwError
         . EvalError
         $ "Can not identify variable '"
-          <> identifier
+          <> identifierTxt
           <> "'"
 
-insertEnv :: T.Text -> MemAddress -> Env -> Env
+insertEnv :: Identifier -> MemAddress -> Env -> Env
 insertEnv k b = Env . M.insert k b . getMap
 
-getVal :: T.Text -> Env -> Maybe MemAddress
+getVal :: Identifier -> Env -> Maybe MemAddress
 getVal var = M.lookup var . getMap
 
 -- Updates the memory map, and returns the added data's memory address
@@ -315,7 +311,7 @@ prepareDefaultBindings =
         foldr
           ( \(func, val) (e, m) ->
               let (newMem, newC) = insertMem (Computed val) m
-               in (insertEnv func newC e, newMem)
+               in (insertEnv (Var func) newC e, newMem)
           )
           (Env M.empty, Mem M.empty 0)
           defaultBindings
@@ -334,7 +330,7 @@ prepareDefaultBindings =
     createBuiltIn :: Int -> EStack Val -> Val
     createBuiltIn m comp = compute m (Env M.empty)
       where
-        compute 1 = C "1" (InterpE comp)
+        compute 1 = C (Var "1") (InterpE comp)
         compute n =
           C
             identifier
@@ -343,15 +339,15 @@ prepareDefaultBindings =
                 return . compute (pred n) $ env
             )
           where
-            identifier = T.pack . show $ n
+            identifier = Var . T.pack . show $ n
 
     createBinary binOp = createBuiltIn 2 $ do
-      v1 <- getMemoizedValue "2"
-      v2 <- getMemoizedValue "1"
+      v1 <- getMemoizedValue (Var "2")
+      v2 <- getMemoizedValue (Var "1")
       binOp v1 v2
 
     createUnary unOp = createBuiltIn 1 $ do
-      v1 <- getMemoizedValue "1"
+      v1 <- getMemoizedValue (Var "1")
       unOp v1
 
     safePlus :: Val -> Val -> EStack Val

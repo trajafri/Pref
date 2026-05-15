@@ -24,28 +24,28 @@ import Syntax.Exp
    Example: If we see zero?, we generate a simple cpsed version
    of zero?, i.e (define zero?k (lambda (x k) (k (zero? x))))
 -}
-data Collector = Unit | FreeAndScoped [(T.Text, Int)] [T.Text]
+data Collector = Unit | FreeAndScoped [(Identifier, Int)] [Identifier]
 
-collect :: (T.Text, Int) -> Collector -> Collector
+collect :: (Identifier, Int) -> Collector -> Collector
 collect e@(var, _) c@(FreeAndScoped free scoped) =
   if elem e free || elem var scoped then c else FreeAndScoped (e : free) scoped
 collect _ x = x
 
 getFixedExp :: Exp -> Collector -> Exp
-getFixedExp i@(Id txt) (FreeAndScoped free _) =
-  if elem txt $ fmap fst free then Id $ txt <> "k" else i
+getFixedExp i@(Id v@(Var txt)) (FreeAndScoped free _) =
+  if elem v $ fmap fst free then Id . Var $ txt <> "k" else i
 getFixedExp ex _ = ex
 
-getFreeVars :: Collector -> [(T.Text, Int)]
+getFreeVars :: Collector -> [(Identifier, Int)]
 getFreeVars (FreeAndScoped free _) = free
 getFreeVars _ = []
 
-updateVars :: [T.Text] -> Collector -> Collector
+updateVars :: [Identifier] -> Collector -> Collector
 updateVars newVars (FreeAndScoped free oldVars) =
   FreeAndScoped free $ newVars <> oldVars
 updateVars _ c = c
 
-removeVars :: [T.Text] -> Collector -> Collector
+removeVars :: [Identifier] -> Collector -> Collector
 removeVars oldVars (FreeAndScoped free newVars) =
   FreeAndScoped free $ newVars \\ oldVars
 removeVars _ c = c
@@ -70,7 +70,7 @@ cpser (Lambda vars [b]) = do
   modify $ updateVars vars
   cpsedBody <- cpsExp b
   modify $ removeVars vars
-  return $ Lambda (vars ++ ["k"]) [cpsedBody]
+  return $ Lambda (vars ++ [Var "k"]) [cpsedBody]
 -- The way I am doing things, `if` ends up having three cases
 cpser (If (App rator rands) thn els) = do
   cpsedThn <- cpser thn
@@ -100,13 +100,13 @@ cpser (Def v b) = do
    It invokes the continuation provided by cpser in the lambda case.
 -}
 cpsExp :: Exp -> State Collector Exp
-cpsExp i@(Id _) = return $ App (Id "k") [i] -- apply k to value
-cpsExp n@(NLiteral _) = return $ App (Id "k") [n] -- apply k to value
-cpsExp s@(SLiteral _) = return $ App (Id "k") [s] -- apply k to value
-cpsExp b@(BLiteral _) = return $ App (Id "k") [b] -- apply k to value
+cpsExp i@(Id _) = return $ App (Id . Var $ "k") [i] -- apply k to value
+cpsExp n@(NLiteral _) = return $ App (Id . Var $ "k") [n] -- apply k to value
+cpsExp s@(SLiteral _) = return $ App (Id . Var $ "k") [s] -- apply k to value
+cpsExp b@(BLiteral _) = return $ App (Id . Var $ "k") [b] -- apply k to value
 cpsExp l@(Lambda _ _) = do
   cpsedLambda <- cpser l
-  return $ App (Id "k") [cpsedLambda] -- lambda's are simple, apply k!!
+  return $ App (Id . Var $ "k") [cpsedLambda] -- lambda's are simple, apply k!!
 cpsExp (If (App rator rands) thn els) = do
   cpsedThn <- cpsExp thn
   cpsedEls <- cpsExp els
@@ -118,7 +118,7 @@ cpsExp (If cond thn els) = do
   return $ If cond cpsedThn cpsedEls
 cpsExp l@(Let _ _) = cpsExp $ letToApp l
 cpsExp (App rator rands) =
-  extractCpsAppExp rator rands $ \arg -> App (Id "k") [arg]
+  extractCpsAppExp rator rands $ \arg -> App (Id . Var $ "k") [arg]
 cpsExp (Begin _) = undefined -- TODO: probably need to cps head, and rest within the head's continuation
 cpsExp (Def _ _) = undefined -- can't have definitions in a lambda yet
 
@@ -164,7 +164,7 @@ cpsApp :: [Exp] -> AppCPSer
 cpsApp [] = do
   exps <- gets $ \(_, a, _) -> a
   i <- gets $ \(a, _, _) -> a
-  let finalResult = "arg" <> (T.pack . show $ i)
+  let finalResult = Var $ "arg" <> (T.pack . show $ i)
   let e = DL.head exps
   let es = DL.tail exps
   case e of
@@ -187,7 +187,7 @@ cpsApp (App rator rands : exs) = do
   currExpCont <- cpsApp (rator : rands) -- CPS the application, and get the cont function
   modify $ \(a, _, c) -> (a, vars, c)
   i <- gets $ \(a, _, _) -> a
-  modify $ \(a, b, c) -> (a, DL.snoc b (Id ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
+  modify $ \(a, b, c) -> (a, DL.snoc b (Id . Var $ ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
   modify $ \(_, b, c) -> (succ i, b, c) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`

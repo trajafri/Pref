@@ -18,7 +18,7 @@ errorMsg :: T.Text
 errorMsg = " cpsed incorrectly"
 
 getAst :: T.Text -> Exp
-getAst = head . fromRight [Id "error"] . codeToAst
+getAst = head . fromRight [Id . Var $ "error"] . codeToAst
 
 allTests :: [Assertion]
 allTests =

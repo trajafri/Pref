@@ -15,6 +15,9 @@ import Prelude hiding
     id,
   )
 
+variableParser :: Parsec T.Text () Identifier
+variableParser = Var <$> identifier
+
 parse :: Parsec T.Text () [Exp]
 parse =
   many $
@@ -27,7 +30,7 @@ parse =
       whiteSpace
       case define of
         "define" -> do
-          ident <- identifier
+          ident <- variableParser
           whiteSpace
           Def ident <$> expParser
         _ -> parserZero
@@ -40,12 +43,12 @@ expParser =
   boolParser
     <|> decimalParser
     <|> stringParser
-    <|> idParser
+    <|> identifierParser
     <|> parens
       (lambdaParser <|> beginParser <|> ifParser <|> letParser <|> appParser)
   where
-    idParser :: Parsec T.Text () Exp
-    idParser = Id <$> identifier
+    identifierParser :: Parsec T.Text () Exp
+    identifierParser = Id <$> variableParser
 
     boolParser :: Parsec T.Text () Exp
     boolParser = BLiteral <$> bool
@@ -78,7 +81,7 @@ expParser =
       case ident of
         "lambda" -> do
           whiteSpace
-          vars <- parens $ (whiteSpace >> identifier) `sepBy` whiteSpace
+          vars <- parens $ (whiteSpace >> variableParser) `sepBy` whiteSpace
           whiteSpace
           res <- Lambda vars <$> expListParser
           whiteSpace
@@ -104,7 +107,7 @@ expParser =
             >> parens
               ( do
                   whiteSpace
-                  var <- identifier
+                  var <- variableParser
                   whiteSpace
                   bnd <- expParser
                   whiteSpace

@@ -33,7 +33,7 @@ If a variable is unbound, it is replaced by a value which could never be in the 
 i.e, a value that occurs -1 amount of times.
 -}
 
-type Env = M.Map T.Text Int
+type Env = M.Map Identifier Int
 
 builtIns :: S.Set T.Text
 builtIns =
@@ -51,7 +51,7 @@ builtIns =
       "fix"
     ]
 
-genSym :: T.Text -> StateT (M.Map T.Text Int) (Reader Env) (T.Text, Int)
+genSym :: Identifier -> StateT (M.Map Identifier Int) (Reader Env) (Identifier, Int)
 genSym v = do
   m <- get
   let mp = M.insertWith (const succ) v 0 m
@@ -60,15 +60,15 @@ genSym v = do
     Just i -> return (v, i)
     Nothing -> undefined
 
-uniquify :: Exp -> StateT (M.Map T.Text Int) (Reader Env) Exp
-uniquify (Id v) =
-  if S.member v builtIns
+uniquify :: Exp -> StateT (M.Map Identifier Int) (Reader Env) Exp
+uniquify (Id v@(Var txt)) =
+  if S.member txt builtIns
     then return (Id v)
     else do
       env <- ask
       case M.lookup v env of
-        Nothing -> return . Id $ v <> ".-1"
-        Just n -> return . Id $ v <> "." <> (T.pack . show $ n)
+        Nothing -> return . Id . Var $ txt <> ".-1"
+        Just n -> return . Id . Var $ txt <> "." <> (T.pack . show $ n)
 uniquify n@(NLiteral _) = return n
 uniquify s@(SLiteral _) = return s
 uniquify b@(BLiteral _) = return b
@@ -77,7 +77,7 @@ uniquify (Lambda vs b) = do
   uniqueB <-
     local (\env -> foldl (\e (v, i) -> M.insert v i e) env vars) $
       mapM uniquify b
-  return $ Lambda [v <> "." <> (T.pack . show $ i) | (v, i) <- vars] uniqueB
+  return $ Lambda [Var $ v <> "." <> (T.pack . show $ i) | (Var v, i) <- vars] uniqueB
 uniquify (If q t f) = If <$> uniquify q <*> uniquify t <*> uniquify f
 uniquify (Let ps b) = do
   let (vs, es) = unzip (NE.toList ps)
@@ -88,7 +88,7 @@ uniquify (Let ps b) = do
       mapM uniquify b
   return $
     Let
-      (NE.fromList [(v <> "." <> (T.pack . show $ i), e) | ((v, i), e) <- zip vars exps])
+      (NE.fromList [(Var $ v <> "." <> (T.pack . show $ i), e) | ((Var v, i), e) <- zip vars exps])
       uniqueB
 uniquify (App rator rands) = App <$> uniquify rator <*> mapM uniquify rands
 uniquify _ = undefined
@@ -98,14 +98,14 @@ uniquify _ = undefined
 --  uniqueE <- local (M.insert v i) $ uniquify e
 --  return $ Def (uV <> "." <> (T.pack . show $ i)) uniqueE
 
-uniquifyProgram :: [Exp] -> Env -> StateT (M.Map T.Text Int) (Reader Env) [Exp]
+uniquifyProgram :: [Exp] -> Env -> StateT (M.Map Identifier Int) (Reader Env) [Exp]
 uniquifyProgram [] _ = return []
 uniquifyProgram (Def v e : es) env = do
-  (uV, i) <- genSym v
+  (Var uV, i) <- genSym v
   let newEnv = M.insert v i env
   uniqueE <- local (const newEnv) $ uniquify e
   rest <- uniquifyProgram es newEnv
-  return $ Def (uV <> "." <> (T.pack . show $ i)) uniqueE : rest
+  return $ Def (Var $ uV <> "." <> (T.pack . show $ i)) uniqueE : rest
 uniquifyProgram (e : es) env = do
   uniqueE <- local (const env) $ uniquify e
   rest <- uniquifyProgram es env

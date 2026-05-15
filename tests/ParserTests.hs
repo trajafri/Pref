@@ -20,52 +20,52 @@ allExpTests :: [Assertion]
 allExpTests =
   [ assertEqual (show $ test <> expErrorMsg) ex $ codeToAst test
     | (test, ex) <-
-        [ ("a", return [Id "a"]),
-          ("(a)", return [App (Id "a") []]),
-          ("(a a)", return [App (Id "a") [Id "a"]]),
-          ("(lambda (a) a)", return [Lambda ["a"] [Id "a"]]),
-          ("(lambda (a) (a a))", return [Lambda ["a"] [App (Id "a") [Id "a"]]]),
+        [ ("a", return [Id . Var $ "a"]),
+          ("(a)", return [App (Id . Var $ "a") []]),
+          ("(a a)", return [App (Id . Var $ "a") [Id . Var $ "a"]]),
+          ("(lambda (a) a)", return [Lambda [Var "a"] [Id . Var $ "a"]]),
+          ("(lambda (a) (a a))", return [Lambda [Var "a"] [App (Id . Var $ "a") [Id . Var $ "a"]]]),
           ( "(let ((a) (b b)) (a a))",
             return
               [ App
-                  (Id "let")
-                  [ App (App (Id "a") []) [App (Id "b") [Id "b"]],
-                    App (Id "a") [Id "a"]
+                  (Id . Var $ "let")
+                  [ App (App (Id . Var $ "a") []) [App (Id . Var $ "b") [Id . Var $ "b"]],
+                    App (Id . Var $ "a") [Id . Var $ "a"]
                   ]
               ]
           ),
           ( "(let ((a) (b b)) (a a)) (a)",
             return
               [ App
-                  (Id "let")
-                  [App (App (Id "a") []) [App (Id "b") [Id "b"]], App (Id "a") [Id "a"]],
-                App (Id "a") []
+                  (Id . Var $ "let")
+                  [App (App (Id . Var $ "a") []) [App (Id . Var $ "b") [Id . Var $ "b"]], App (Id . Var $ "a") [Id . Var $ "a"]],
+                App (Id . Var $ "a") []
               ]
           ),
           ( "(let ((a) (b b)) (a a)) (define a) (a a)",
             return
               [ App
-                  (Id "let")
-                  [App (App (Id "a") []) [App (Id "b") [Id "b"]], App (Id "a") [Id "a"]],
-                App (Id "define") [Id "a"],
-                App (Id "a") [Id "a"]
+                  (Id . Var $ "let")
+                  [App (App (Id . Var $ "a") []) [App (Id . Var $ "b") [Id . Var $ "b"]], App (Id . Var $ "a") [Id . Var $ "a"]],
+                App (Id . Var $ "define") [Id . Var $ "a"],
+                App (Id . Var $ "a") [Id . Var $ "a"]
               ]
           ),
           ( "(let ((b b)) (a a)) (define a) (a a)",
             return
-              [ Let (singleton ("b", Id "b")) [App (Id "a") [Id "a"]],
-                App (Id "define") [Id "a"],
-                App (Id "a") [Id "a"]
+              [ Let (singleton (Var "b", Id . Var $ "b")) [App (Id . Var $ "a") [Id . Var $ "a"]],
+                App (Id . Var $ "define") [Id . Var $ "a"],
+                App (Id . Var $ "a") [Id . Var $ "a"]
               ]
           ),
-          ("(a b c d)", return [App (Id "a") [Id "b", Id "c", Id "d"]]),
-          ("(lambda (a b c d) e)", return [Lambda ["a", "b", "c", "d"] [Id "e"]]),
-          ("(lambda () a)", return [Lambda [] [Id "a"]]),
+          ("(a b c d)", return [App (Id . Var $ "a") [Id . Var $ "b", Id . Var $ "c", Id . Var $ "d"]]),
+          ("(lambda (a b c d) e)", return [Lambda [Var "a", Var "b", Var "c", Var "d"] [Id . Var $ "e"]]),
+          ("(lambda () a)", return [Lambda [] [Id . Var $ "a"]]),
           ( "(let ((a a) (b b) (c c) (d d)) e)",
             return
               [ Let
-                  (("a", Id "a") :| [("b", Id "b"), ("c", Id "c"), ("d", Id "d")])
-                  [Id "e"]
+                  ((Var "a", Id . Var $ "a") :| [(Var "b", Id . Var $ "b"), (Var "c", Id . Var $ "c"), (Var "d", Id . Var $ "d")])
+                  [Id . Var $ "e"]
               ]
           ),
           ( "(let ((x (add1 2))\
@@ -73,12 +73,12 @@ allExpTests =
             \(z (fact 5))) (+ x y z))",
             return
               [ Let
-                  ( ("x", App (Id "add1") [NLiteral 2])
-                      :| [ ("y", App (Id "sub1") [Id "x"]),
-                           ("z", App (Id "fact") [NLiteral 5])
+                  ( (Var "x", App (Id . Var $ "add1") [NLiteral 2])
+                      :| [ (Var "y", App (Id . Var $ "sub1") [Id . Var $ "x"]),
+                           (Var "z", App (Id . Var $ "fact") [NLiteral 5])
                          ]
                   )
-                  [App (Id "+") [Id "x", Id "y", Id "z"]]
+                  [App (Id . Var $ "+") [Id . Var $ "x", Id . Var $ "y", Id . Var $ "z"]]
               ]
           ),
           ("1", return [NLiteral 1]),

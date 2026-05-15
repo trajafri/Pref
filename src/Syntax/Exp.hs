@@ -1,5 +1,6 @@
 module Syntax.Exp
-  ( Exp (..),
+  ( Identifier (..),
+    Exp (..),
   )
 where
 
@@ -7,15 +8,20 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Prettyprinter
 
+newtype Identifier = Var T.Text deriving (Eq, Show, Ord)
+
+instance Pretty Identifier where
+  pretty (Var t) = pretty t
+
 data Exp
   = NLiteral Int
   | SLiteral T.Text
   | BLiteral Bool
-  | Id T.Text
+  | Id Identifier
   | -- ideally, the cases below shouldn't be "special"
     -- better if we have a "syntax definition" that can cover all of these
     Lambda
-      [T.Text]
+      [Identifier]
       [Exp]
   | Begin [Exp]
   | If
@@ -23,13 +29,13 @@ data Exp
       Exp
       Exp
   | Let
-      (NE.NonEmpty (T.Text, Exp))
+      (NE.NonEmpty (Identifier, Exp))
       [Exp]
   | App
       Exp
       [Exp]
   | Def
-      T.Text
+      Identifier
       Exp
   deriving (Eq)
 
