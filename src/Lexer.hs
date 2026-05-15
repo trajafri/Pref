@@ -1,19 +1,21 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, MultiWayIf #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Lexer
-  ( decimal
-  , bool
-  , identifier
-  , parens
-  , stringLiteral
-  , whiteSpace
+  ( decimal,
+    bool,
+    identifier,
+    parens,
+    stringLiteral,
+    whiteSpace,
   )
 where
 
-import           Data.Char
-import           Data.List                      ( nub )
-import qualified Data.Text                     as T
-import           Text.Parsec
+import Data.Char
+import Data.List (nub)
+import qualified Data.Text as T
+import Text.Parsec
 
 {- Regarding using the "user state" in ParsecT:
    If we were to stack ParsecT on some monad M, the
@@ -33,9 +35,9 @@ identifier = try $ do
 
 parens :: Parsec T.Text () a -> Parsec T.Text () a
 parens p = do
-  c   <- char '(' <|> char '{' <|> char '['
+  c <- char '(' <|> char '{' <|> char '['
   res <- p
-  _   <- char (if c == '(' then ')' else if c == '{' then '}' else ']')
+  _ <- char (if c == '(' then ')' else if c == '{' then '}' else ']')
   return res
 
 bool :: Parsec T.Text () Bool
@@ -47,7 +49,6 @@ bool = try $ do
 -- Parsers shamelessly copied from source
 number :: Integer -> Parsec T.Text () Char -> Parsec T.Text () Integer
 number base baseDigit = do
-
   digits <- many1 baseDigit
   let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
   seq n (return n)
@@ -71,13 +72,13 @@ stringEscape :: Parsec T.Text () (Maybe Char)
 stringEscape = do
   _ <- char '\\'
   do
-      _ <- escapeGap
-      return Nothing
+    _ <- escapeGap
+    return Nothing
     <|> do
-          _ <- escapeEmpty
-          return Nothing
+      _ <- escapeEmpty
+      return Nothing
     <|> Just
-    <$> escapeCode
+      <$> escapeCode
 
 escapeEmpty :: Parsec T.Text () Char
 escapeEmpty = char '&'
@@ -93,7 +94,7 @@ escapeCode =
 
 charControl :: Parsec T.Text () Char
 charControl = do
-  _    <- char '^'
+  _ <- char '^'
   code <- upper
   return (toEnum (fromEnum code - fromEnum 'A' + 1))
 
@@ -101,32 +102,32 @@ charNum :: Parsec T.Text () Char
 charNum = do
   code <-
     decimal
-    <|> do
-          _ <- char 'o'
-          number 8 octDigit
-    <|> do
-          _ <- char 'x'
-          number 16 hexDigit
+      <|> do
+        _ <- char 'o'
+        number 8 octDigit
+      <|> do
+        _ <- char 'x'
+        number 16 hexDigit
   if code > 0x10FFFF
     then fail "invalid escape sequence"
     else return (toEnum (fromInteger code))
 
 charEsc :: Parsec T.Text () Char
 charEsc = choice (map parseEsc escMap)
- where
-  parseEsc (c, code) = do
-    _ <- char c
-    return code
+  where
+    parseEsc (c, code) = do
+      _ <- char c
+      return code
 
 charAscii :: Parsec T.Text () Char
 charAscii = choice (map parseAscii asciiMap)
- where
-  parseAscii (asc, code) = try
-    (do
-      _ <- string asc
-      return code
-    )
-
+  where
+    parseAscii (asc, code) =
+      try
+        ( do
+            _ <- string asc
+            return code
+        )
 
 -- escape code tables
 escMap :: [(Char, Char)]
@@ -137,95 +138,95 @@ asciiMap = zip (ascii3codes ++ ascii2codes) $ ascii3 ++ ascii2
 
 ascii2codes :: [String]
 ascii2codes =
-  [ "BS"
-  , "HT"
-  , "LF"
-  , "VT"
-  , "FF"
-  , "CR"
-  , "SO"
-  , "SI"
-  , "EM"
-  , "FS"
-  , "GS"
-  , "RS"
-  , "US"
-  , "SP"
+  [ "BS",
+    "HT",
+    "LF",
+    "VT",
+    "FF",
+    "CR",
+    "SO",
+    "SI",
+    "EM",
+    "FS",
+    "GS",
+    "RS",
+    "US",
+    "SP"
   ]
 
 ascii3codes :: [String]
 ascii3codes =
-  [ "NUL"
-  , "SOH"
-  , "STX"
-  , "ETX"
-  , "EOT"
-  , "ENQ"
-  , "ACK"
-  , "BEL"
-  , "DLE"
-  , "DC1"
-  , "DC2"
-  , "DC3"
-  , "DC4"
-  , "NAK"
-  , "SYN"
-  , "ETB"
-  , "CAN"
-  , "SUB"
-  , "ESC"
-  , "DEL"
+  [ "NUL",
+    "SOH",
+    "STX",
+    "ETX",
+    "EOT",
+    "ENQ",
+    "ACK",
+    "BEL",
+    "DLE",
+    "DC1",
+    "DC2",
+    "DC3",
+    "DC4",
+    "NAK",
+    "SYN",
+    "ETB",
+    "CAN",
+    "SUB",
+    "ESC",
+    "DEL"
   ]
 
 ascii2 :: String
 ascii2 =
-  [ '\BS'
-  , '\HT'
-  , '\LF'
-  , '\VT'
-  , '\FF'
-  , '\CR'
-  , '\SO'
-  , '\SI'
-  , '\EM'
-  , '\FS'
-  , '\GS'
-  , '\RS'
-  , '\US'
-  , '\SP'
+  [ '\BS',
+    '\HT',
+    '\LF',
+    '\VT',
+    '\FF',
+    '\CR',
+    '\SO',
+    '\SI',
+    '\EM',
+    '\FS',
+    '\GS',
+    '\RS',
+    '\US',
+    '\SP'
   ]
 
 ascii3 :: String
 ascii3 =
-  [ '\NUL'
-  , '\SOH'
-  , '\STX'
-  , '\ETX'
-  , '\EOT'
-  , '\ENQ'
-  , '\ACK'
-  , '\BEL'
-  , '\DLE'
-  , '\DC1'
-  , '\DC2'
-  , '\DC3'
-  , '\DC4'
-  , '\NAK'
-  , '\SYN'
-  , '\ETB'
-  , '\CAN'
-  , '\SUB'
-  , '\ESC'
-  , '\DEL'
+  [ '\NUL',
+    '\SOH',
+    '\STX',
+    '\ETX',
+    '\EOT',
+    '\ENQ',
+    '\ACK',
+    '\BEL',
+    '\DLE',
+    '\DC1',
+    '\DC2',
+    '\DC3',
+    '\DC4',
+    '\NAK',
+    '\SYN',
+    '\ETB',
+    '\CAN',
+    '\SUB',
+    '\ESC',
+    '\DEL'
   ]
 
 -- https://www.schoolofhaskell.com/school/to-infinity-and-beyond/pick-of-the-week/parsing-floats-with-parsec
 decimal :: Parsec T.Text () Integer
 decimal =
-  try
-    $   (char '+' *> number 10 digit)
-    <|> (negate <$ char '-' <*> number 10 digit)
-    <|> number 10 digit
+  try $
+    (char '+' *> number 10 digit)
+      <|> (negate <$ char '-' <*> number 10 digit)
+      <|> number 10 digit
 
 whiteSpace :: Parsec T.Text () ()
 whiteSpace =
@@ -251,32 +252,34 @@ inComment = inCommentSingle
 inCommentSingle :: Parsec T.Text () ()
 inCommentSingle =
   do
-      _ <- try $ string "|#"
-      return ()
+    _ <- try $ string "|#"
+    return ()
     <|> do
-          skipMany1 (noneOf startEnd)
-          inCommentSingle
+      skipMany1 (noneOf startEnd)
+      inCommentSingle
     <|> do
-          _ <- oneOf startEnd
-          inCommentSingle
+      _ <- oneOf startEnd
+      inCommentSingle
     <?> "end of comment"
-  where startEnd = nub ("|#" ++ "#|")
+  where
+    startEnd = nub ("|#" ++ "#|")
 
 validIdChar :: Char -> Bool
-validIdChar c = all
-  ($ c)
-  [ not . isSpace
-  , (')' /=)
-  , ('(' /=)
-  , ('\"' /=)
-  , ('\'' /=)
-  , (',' /=)
-  , ('[' /=)
-  , (']' /=)
-  , ('{' /=)
-  , ('}' /=)
-  , ('#' /=)
-  , ('`' /=)
-  , (':' /=)
-  , (';' /=)
-  ]
+validIdChar c =
+  all
+    ($ c)
+    [ not . isSpace,
+      (')' /=),
+      ('(' /=),
+      ('\"' /=),
+      ('\'' /=),
+      (',' /=),
+      ('[' /=),
+      (']' /=),
+      ('{' /=),
+      ('}' /=),
+      ('#' /=),
+      ('`' /=),
+      (':' /=),
+      (';' /=)
+    ]

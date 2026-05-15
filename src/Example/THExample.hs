@@ -1,10 +1,12 @@
-{-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Example.THExample where
 
-import           TH
+import TH
 
 fact :: Int -> Int
+
 [prefQuoter|
 (define fact
   (lambda (n)
@@ -13,7 +15,8 @@ fact :: Int -> Int
         (* n (fact (- n 1))))))|]
 
 powerset :: [Int] -> [[Int]]
-powerset = [prefQuoter|
+powerset =
+  [prefQuoter|
            (lambda (ls)
                      (if (empty? ls)
                          (cons empty empty)
@@ -22,9 +25,10 @@ powerset = [prefQuoter|
 |]
 
 fib :: Int -> Int
-fib = [prefQuoter|
+fib =
+  [prefQuoter|
        (lambda (n) (haskellFib n))|]
- where
-  haskellFib 0 = 0
-  haskellFib 1 = 1
-  haskellFib n = haskellFib (pred n) + haskellFib (pred $ pred n)
+  where
+    haskellFib 0 = 0
+    haskellFib 1 = 1
+    haskellFib n = haskellFib (pred n) + haskellFib (pred $ pred n)
