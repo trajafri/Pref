@@ -166,6 +166,53 @@ evalM (Def _ _) =
     . EvalError
     $ "A non-top level `defined` expression is not supported"
 
+--
+-- TODO: Memory can be updated by top-level expressions in cbr
+evalList ::
+  [Exp] ->
+  [(T.Text, Exp)] ->
+  Env Int ->
+  Mem (Box Int) ->
+  Either EvalError [MemVal]
+evalList [] _ _ _ = return []
+evalList (Def id binding : es) futureBindings env mem =
+  let newFutures = drop 1 futureBindings
+      fixedBinding = topLevelFunction id newFutures binding
+      (uMem, memId) = insertMem (Computation fixedBinding env) mem
+      val = memId
+   in evalList es newFutures (insertEnv id val env) uMem
+  where
+    topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
+    topLevelFunction expId fb (Lambda [] body) =
+      App
+        (App (Id "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
+        [NLiteral 0]
+      where
+        self = "_" -- Todo: Should be a non-colliding variable
+        newBody =
+          foldr
+            (\b r -> Let (NE.singleton b) [r])
+            ( Let
+                (NE.singleton (expId, App (Id expId) [Id self]))
+                body
+            )
+            fns
+        fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
+    topLevelFunction expId fb (Lambda ps [body]) =
+      App
+        (Id "fix")
+        [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
+    topLevelFunction _ _ (Lambda _ _) = error "Under construction"
+    topLevelFunction _ _ b = b
+
+    futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]
+    futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
+      modify $ drop 1
+      currFutureBindings <- get
+      return (name, topLevelFunction name currFutureBindings func)
+evalList (exp : es) fb env mem =
+  (:) <$> eval exp env mem <*> evalList es fb env mem
+
 -- Utilities
 --------------------------------------------------------------------
 
@@ -380,52 +427,6 @@ prepareDefaultBindings =
     safeNot :: MemVal -> EStack MemVal
     safeNot (B False) = return $ B True
     safeNot _ = return $ B False
-
--- TODO: Memory can be updated by top-level expressions in cbr
-evalList ::
-  [Exp] ->
-  [(T.Text, Exp)] ->
-  Env Int ->
-  Mem (Box Int) ->
-  Either EvalError [MemVal]
-evalList [] _ _ _ = return []
-evalList (Def id binding : es) futureBindings env mem =
-  let newFutures = drop 1 futureBindings
-      fixedBinding = topLevelFunction id newFutures binding
-      (uMem, memId) = insertMem (Computation fixedBinding env) mem
-      val = memId
-   in evalList es newFutures (insertEnv id val env) uMem
-  where
-    topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
-    topLevelFunction expId fb (Lambda [] body) =
-      App
-        (App (Id "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
-        [NLiteral 0]
-      where
-        self = "_" -- Todo: Should be a non-colliding variable
-        newBody =
-          foldr
-            (\b r -> Let (NE.singleton b) [r])
-            ( Let
-                (NE.singleton (expId, App (Id expId) [Id self]))
-                body
-            )
-            fns
-        fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
-    topLevelFunction expId fb (Lambda ps [body]) =
-      App
-        (Id "fix")
-        [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
-    topLevelFunction _ _ (Lambda _ _) = error "Under construction"
-    topLevelFunction _ _ b = b
-
-    futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]
-    futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
-      modify $ drop 1
-      currFutureBindings <- get
-      return (name, topLevelFunction name currFutureBindings func)
-evalList (exp : es) fb env mem =
-  (:) <$> eval exp env mem <*> evalList es fb env mem
 
 codeToAst :: T.Text -> Either ParseError [Exp]
 codeToAst code = either throwError return $ runParser parse () "" code
