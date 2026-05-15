@@ -36,33 +36,54 @@ import Prelude hiding
 -- Type Setup
 -----------------------------------------------------------------
 
--- `v` represents what a variable is bound to.
--- This will help when we try to generalize the interpreter to
--- implement any evaluation strategy.
-newtype Env v = Env {getMap :: M.Map T.Text v} deriving (Eq, Show)
+type MemAddress = Int
 
--- `d` represents the data that a memory address points to.
-data Mem d
-  = Mem
-      -- | mapping from memory-address to data
-      (M.Map Int d)
-      -- | memory-address counter
-      Int
+data Mem d = Mem
+  { getMappings :: M.Map MemAddress d,
+    getCounter :: Int
+  }
 
--- `v` is the type level argument for environments/values
--- Box represents a computation in a lazy interpreter
-data Box v
-  = -- | a value that hasn't been computed yet,
-    Computation Exp (Env v)
-  | -- | a value that has been computed before
-    Computed (Val v)
-  deriving (Eq, Show)
+type Identifier = T.Text
+
+newtype Env = Env {getMap :: M.Map Identifier MemAddress} deriving (Eq, Show)
+
+data Val
+  = S T.Text
+  | I Int
+  | B Bool
+  | -- | Closure
+    -- Note that a closure doesn't contain an `Exp`
+    C T.Text PrefComputation Env
+  | -- | Thunk
+    T [Exp] Env
+  | Cons Val Val
+  | -- | Empty list
+    E
+  | -- | Void
+    V
+  deriving (Eq)
+
+instance Show Val where
+  show (S s) = T.unpack s
+  show (I i) = show i
+  show (B b) = show b
+  show (C s _ _) = "<lambda:" <> T.unpack s <> ">"
+  show (T _ _) = "<thunk>"
+  show ls@(Cons _ _) =
+    "(list"
+      <> foldr (\x y -> " " <> x <> y) ")" (contents ls)
+    where
+      contents (Cons a b) = show a : contents b
+      contents E = []
+      contents a = [show a]
+  show E = "empty"
+  show V = "<void>"
 
 -- Interpreter can see two kinds of computations
 -- 1. An expression written in Pref
 -- 2. A program written in haskell by the interpreter.
 --    These programs are used to implement built-in functions
-data PrefComputation = PrefE Exp | InterpE (EStack MemVal)
+data PrefComputation = PrefE Exp | InterpE (EStack Val)
 
 -- `Eq` is implemented only for testing purposes
 -- Since there's no point to testing two partial haskell
@@ -71,56 +92,25 @@ instance Eq PrefComputation where
   (PrefE exp1) == (PrefE exp2) = exp1 == exp2
   _ == _ = False
 
--- `v` is the type level argument for the environment.
--- For Call-by value, this is simply `Val`
-data Val v
-  = S T.Text
-  | I Int
-  | B Bool
-  | -- | Closure
-    -- Note that a closure doesn't contain an `Exp`
-    C T.Text PrefComputation (Env v)
-  | -- | Thunk
-    T [Exp] (Env v)
-  | Cons (Val v) (Val v)
-  | -- | Empty list
-    E
-  | -- | Void
-    V
-  deriving (Eq)
-
-instance Show (Val d) where
-  show (S s) = T.unpack s
-  show (I i) = show i
-  show (B b) = show b
-  show (C s _ _) = "<lambda:" <> T.unpack s <> ">"
-  show (T _ _) = "<thunk>"
-  show ls@(Cons _ _) =
-    "(list"
-      <> Prelude.foldr (\x y -> " " <> x <> y) ")" (contents ls)
-    where
-      contents (Cons a b) = show a : contents b
-      contents E = []
-      contents a = [show a]
-  show E = "empty"
-  show V = "<void>"
-
--- Value with environment
-type MemAddress = Int
-
-type MemVal = Val MemAddress
+-- Box represents a computation in a lazy interpreter
+-- For a strict interpreter, we never use the `Computation` constructor
+data Box
+  = Computed Val
+  | -- | a value that hasn't been computed yet,
+    Computation Exp Env
+  deriving (Eq, Show)
 
 -- interpreter's monad stack
 type EStack val =
-  StateT (Mem (Box Int)) (ReaderT (Env Int) (Either EvalError)) val
+  StateT (Mem Box) (ReaderT Env (Either EvalError)) val
 
 -- Interpreter
 --------------------------------------------------------------------
 
-eval :: Exp -> Env Int -> Mem (Box Int) -> Either EvalError MemVal
+eval :: Exp -> Env -> Mem Box -> Either EvalError Val
 eval e env mem = (`runReaderT` env) . (`evalStateT` mem) . evalM $ e
 
-evalM :: Exp -> EStack MemVal
+evalM :: Exp -> EStack Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
@@ -137,7 +127,7 @@ evalM (Let bindings [body]) = do
   updatedEnv <- foldM pushToEnv env bindings
   local (const updatedEnv) . evalM $ body
   where
-    pushToEnv :: Env Int -> (T.Text, Exp) -> EStack (Env Int)
+    pushToEnv :: Env -> (T.Text, Exp) -> EStack Env
     pushToEnv newEnv (identifier, exp) = do
       memAdd <- memoize exp
       return $ insertEnv identifier memAdd newEnv
@@ -171,9 +161,9 @@ evalM (Def _ _) =
 evalList ::
   [Exp] ->
   [(T.Text, Exp)] ->
-  Env Int ->
-  Mem (Box Int) ->
-  Either EvalError [MemVal]
+  Env ->
+  Mem Box ->
+  Either EvalError [Val]
 evalList [] _ _ _ = return []
 evalList (Def id binding : es) futureBindings env mem =
   let newFutures = drop 1 futureBindings
@@ -216,7 +206,7 @@ evalList (exp : es) fb env mem =
 -- Utilities
 --------------------------------------------------------------------
 
-applyClosure :: MemVal -> Exp -> [Exp] -> EStack MemVal
+applyClosure :: Val -> Exp -> [Exp] -> EStack Val
 applyClosure (C identifier body env) rand remainingRands = do
   memAddress <- memoize rand
   let localEnv = insertEnv identifier memAddress env
@@ -239,7 +229,7 @@ applyClosure _ _ _ =
 
 -- Given a variable, if its value is already computed, simply return it,
 -- Else, compute it, memoize it, and return it
-getMemoizedValue :: T.Text -> EStack MemVal
+getMemoizedValue :: T.Text -> EStack Val
 getMemoizedValue identifier = do
   memAddress <- resolveIdentifier identifier
   box <- gets $ getMemMapping memAddress
@@ -278,31 +268,33 @@ resolveIdentifier identifier = do
           <> identifier
           <> "'"
 
-insertEnv :: T.Text -> d -> Env d -> Env d
+insertEnv :: T.Text -> MemAddress -> Env -> Env
 insertEnv k b = Env . M.insert k b . getMap
 
-getVal :: T.Text -> Env v -> Maybe v
+getVal :: T.Text -> Env -> Maybe MemAddress
 getVal var = M.lookup var . getMap
 
 -- Updates the memory map, and returns the added data's memory address
 insertMem :: a -> Mem a -> (Mem a, Int)
-insertMem v (Mem m i) =
-  let nextAddress = succ i
-      newMap = M.insert i v m
+insertMem v m =
+  let i = getCounter m
+      nextAddress = succ i
+      newMap = M.insert i v . getMappings $ m
    in (Mem newMap nextAddress, i)
 
 updateMem :: Int -> a -> Mem a -> Mem a
 updateMem id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
 
 getMemMapping :: Int -> Mem a -> Maybe a
-getMemMapping id (Mem m _) = M.lookup id m
+getMemMapping id = M.lookup id . getMappings
 
 -- Setup for usage
 -----------------------------------------------------------------
 
-prepareDefaultBindings :: (Env Int, Mem (Box Int))
+prepareDefaultBindings :: (Env, Mem Box)
 prepareDefaultBindings =
-  let defaultBindings =
+  let defaultBindings :: [(T.Text, Val)]
+      defaultBindings =
         [ ("+", createBinary safePlus),
           ("-", createBinary safeMinus),
           ("*", createBinary safeMult),
@@ -320,7 +312,7 @@ prepareDefaultBindings =
           ("empty", E)
         ]
       (defaultEnv, memoryTable) =
-        Prelude.foldr
+        foldr
           ( \(func, val) (e, m) ->
               let (newMem, newC) = insertMem (Computed val) m
                in (insertEnv func newC e, newMem)
@@ -339,7 +331,7 @@ prepareDefaultBindings =
           counter
    in (defaultEnv, updateMemTable memoryTable)
   where
-    createBuiltIn :: Int -> EStack MemVal -> MemVal
+    createBuiltIn :: Int -> EStack Val -> Val
     createBuiltIn m comp = compute m (Env M.empty)
       where
         compute 1 = C "1" (InterpE comp)
@@ -362,54 +354,54 @@ prepareDefaultBindings =
       v1 <- getMemoizedValue "1"
       unOp v1
 
-    safePlus :: MemVal -> MemVal -> EStack MemVal
+    safePlus :: Val -> Val -> EStack Val
     safePlus (I n) (I m) = return . I $ n + m
     safePlus _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeMinus :: MemVal -> MemVal -> EStack MemVal
+    safeMinus :: Val -> Val -> EStack Val
     safeMinus (I n) (I m) = return . I $ n - m
     safeMinus _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeMult :: MemVal -> MemVal -> EStack MemVal
+    safeMult :: Val -> Val -> EStack Val
     safeMult (I n) (I m) = return . I $ n * m
     safeMult _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeDiv :: MemVal -> MemVal -> EStack MemVal
+    safeDiv :: Val -> Val -> EStack Val
     safeDiv (I n) (I m) = return . I $ n `div` m
     safeDiv _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeAppend :: MemVal -> MemVal -> EStack MemVal
+    safeAppend :: Val -> Val -> EStack Val
     safeAppend (S a) (S b) = return . S $ a <> b
     safeAppend _ _ = throwError . EvalError $ "Expected two strings"
 
-    safeCons :: MemVal -> MemVal -> EStack MemVal
+    safeCons :: Val -> Val -> EStack Val
     safeCons a b = return $ Cons a b
 
-    safeAnd :: MemVal -> MemVal -> EStack MemVal
+    safeAnd :: Val -> Val -> EStack Val
     safeAnd a@(B False) _ = return a
     safeAnd _ b = return b
 
-    safeOr :: MemVal -> MemVal -> EStack MemVal
+    safeOr :: Val -> Val -> EStack Val
     safeOr (B False) b = return b
     safeOr a _ = return a
 
-    safeCar :: MemVal -> EStack MemVal
+    safeCar :: Val -> EStack Val
     safeCar (Cons a _) = return a
     safeCar _ = throwError . EvalError $ "Expected a list"
 
-    safeCdr :: MemVal -> EStack MemVal
+    safeCdr :: Val -> EStack Val
     safeCdr (Cons _ b) = return b
     safeCdr _ = throwError . EvalError $ "Expected a list"
 
-    zeroHuh :: MemVal -> EStack MemVal
+    zeroHuh :: Val -> EStack Val
     zeroHuh (I 0) = return $ B True
     zeroHuh _ = return $ B False
 
-    emptyHuh :: MemVal -> EStack MemVal
+    emptyHuh :: Val -> EStack Val
     emptyHuh E = return $ B True
     emptyHuh _ = return $ B False
 
-    safeFix :: MemVal -> EStack MemVal
+    safeFix :: Val -> EStack Val
     safeFix (C identifier (PrefE b) env) = do
       -- we do the following to allow circular mapping:
       -- \* store closure's body at memory address `M`
@@ -424,14 +416,14 @@ prepareDefaultBindings =
       local (const fixedEnv) $ evalM b
     safeFix _ = throwError . EvalError $ "fix expects a non-zero arity function"
 
-    safeNot :: MemVal -> EStack MemVal
+    safeNot :: Val -> EStack Val
     safeNot (B False) = return $ B True
     safeNot _ = return $ B False
 
 codeToAst :: T.Text -> Either ParseError [Exp]
 codeToAst code = either throwError return $ runParser parse () "" code
 
-codeToVal :: T.Text -> Either EvalError (Either ParseError [MemVal])
+codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
 codeToVal code = case codeToAst code of
   Left e -> return . Left $ e
   Right ast -> case evalList ast (futureBindings ast) defaultEnv defaultMem of
