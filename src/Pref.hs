@@ -154,52 +154,53 @@ evalM (Def _ _) =
     . EvalError
     $ "A non-top level `defined` expression is not supported"
 
---
 -- TODO: Memory can be updated by top-level expressions in cbr
 evalList ::
   [Exp] ->
-  [(Identifier, Exp)] ->
   Env ->
   Mem Box ->
   Either EvalError [Val]
-evalList [] _ _ _ = return []
-evalList (Def id binding : es) futureBindings env mem =
-  let newFutures = drop 1 futureBindings
-      fixedBinding = topLevelFunction id newFutures binding
-      (uMem, memId) = insertMem (Computation fixedBinding env) mem
-      val = memId
-   in evalList es newFutures (insertEnv id val env) uMem
+evalList expList = helper expList futureBindings
   where
-    topLevelFunction :: Identifier -> [(Identifier, Exp)] -> Exp -> Exp
-    topLevelFunction expId fb (Lambda [] body) =
-      App
-        (App (Id . Var $ "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
-        [NLiteral 0]
+    futureBindings = [(i, b) | (Def i b) <- expList]
+    helper [] _ _ _ = return []
+    helper (Def id binding : es) fBs env mem =
+      let newFutures = drop 1 fBs
+          fixedBinding = topLevelFunction id newFutures binding
+          (uMem, memId) = insertMem (Computation fixedBinding env) mem
+          val = memId
+       in helper es newFutures (insertEnv id val env) uMem
       where
-        self = Var "_" -- Todo: Should be a non-colliding variable
-        newBody =
-          foldr
-            (\b r -> Let (NE.singleton b) [r])
-            ( Let
-                (NE.singleton (expId, App (Id expId) [Id self]))
-                body
-            )
-            fns
-        fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
-    topLevelFunction expId fb (Lambda ps [body]) =
-      App
-        (Id . Var $ "fix")
-        [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
-    topLevelFunction _ _ (Lambda _ _) = error "Under construction"
-    topLevelFunction _ _ b = b
+        topLevelFunction :: Identifier -> [(Identifier, Exp)] -> Exp -> Exp
+        topLevelFunction expId fb (Lambda [] body) =
+          App
+            (App (Id . Var $ "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
+            [NLiteral 0]
+          where
+            self = Var "_" -- Todo: Should be a non-colliding variable
+            newBody =
+              foldr
+                (\b r -> Let (NE.singleton b) [r])
+                ( Let
+                    (NE.singleton (expId, App (Id expId) [Id self]))
+                    body
+                )
+                fns
+            fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
+        topLevelFunction expId fb (Lambda ps [body]) =
+          App
+            (Id . Var $ "fix")
+            [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
+        topLevelFunction _ _ (Lambda _ _) = error "Under construction"
+        topLevelFunction _ _ b = b
 
-    futureFunctions :: [(Identifier, Exp)] -> [(Identifier, Exp)]
-    futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
-      modify $ drop 1
-      currFutureBindings <- get
-      return (name, topLevelFunction name currFutureBindings func)
-evalList (exp : es) fb env mem =
-  (:) <$> eval exp env mem <*> evalList es fb env mem
+        futureFunctions :: [(Identifier, Exp)] -> [(Identifier, Exp)]
+        futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
+          modify $ drop 1
+          currFutureBindings <- get
+          return (name, topLevelFunction name currFutureBindings func)
+    helper (exp : es) fb env mem =
+      (:) <$> eval exp env mem <*> helper es fb env mem
 
 -- Utilities
 --------------------------------------------------------------------
@@ -422,11 +423,10 @@ codeToAst code = either throwError return $ runParser parse () "" code
 codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
 codeToVal code = case codeToAst code of
   Left e -> return . Left $ e
-  Right ast -> case evalList ast (futureBindings ast) defaultEnv defaultMem of
+  Right ast -> case evalList ast defaultEnv defaultMem of
     Left e -> Left e
     Right vals -> return . Right $ vals
   where
-    futureBindings ast = [(i, b) | (Def i b) <- ast]
     (defaultEnv, defaultMem) = prepareDefaultBindings
 
 evaluatePref :: T.Text -> T.Text
