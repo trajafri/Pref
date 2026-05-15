@@ -18,6 +18,7 @@ import Control.Monad
 import Control.Monad.Except -- For throwError
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.List.NonEmpty as NE (singleton)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Errors
@@ -38,7 +39,7 @@ import Prelude hiding
 -- `v` represents what a variable is bound to.
 -- This will help when we try to generalize the interpreter to
 -- implement any evaluation strategy.
-data Env v = Env {getMap :: M.Map T.Text v} deriving (Eq, Show)
+newtype Env v = Env {getMap :: M.Map T.Text v} deriving (Eq, Show)
 
 -- `d` represents the data that a memory address points to.
 data Mem d
@@ -80,10 +81,12 @@ data Val v
     -- Note that a closure doesn't contain an `Exp`
     C T.Text PrefComputation (Env v)
   | -- | Thunk
-    T Exp (Env v)
+    T [Exp] (Env v)
   | Cons (Val v) (Val v)
   | -- | Empty list
     E
+  | -- | Void
+    V
   deriving (Eq)
 
 instance Show (Val d) where
@@ -100,6 +103,7 @@ instance Show (Val d) where
       contents E = []
       contents a = [show a]
   show E = "empty"
+  show V = "<void>"
 
 -- Value with environment
 type MemAddress = Int
@@ -117,33 +121,27 @@ eval :: Exp -> Env Int -> Mem (Box Int) -> Either EvalError MemVal
 eval e env mem = (`runReaderT` env) . (`evalStateT` mem) . evalM $ e
 
 evalM :: Exp -> EStack MemVal
-evalM Empty = return E -- EmptyList
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id identifier) = getMemoizedValue identifier
-evalM (Lambda [] body) = do
-  -- Thunk case
-  env <- ask
-  return $ T body env
-evalM (Lambda (identifier : []) body) = do
-  -- Lambda base case
-  env <- ask
-  return $ C identifier (PrefE body) env
-evalM (Lambda (identifier : ids) body) = do
-  -- Lambda currying case
-  let curriedLambda = Lambda [identifier] $ Lambda ids body
-  evalM curriedLambda
-evalM (Let bindings body) = do
+evalM (Begin _) = throwError . EvalError $ "Begin: under construction"
+evalM (Lambda [] [body]) = asks $ T [body] -- Thunk case
+evalM (Lambda [identifier] [body]) =
+  asks $ C identifier (PrefE body) -- Lambda base case
+evalM (Lambda (identifier : ids) [body]) = evalM $ Lambda [identifier] [Lambda ids [body]] -- Lambda currying case
+evalM (Lambda _ _) = throwError . EvalError $ "Lambda Begin: under construction"
+evalM (Let bindings [body]) = do
   -- Let case
   env <- ask
   updatedEnv <- foldM pushToEnv env bindings
-  local (const updatedEnv) $ evalM body
+  local (const updatedEnv) . evalM $ body
   where
-    pushToEnv :: (Env Int) -> (T.Text, Exp) -> EStack (Env Int)
+    pushToEnv :: Env Int -> (T.Text, Exp) -> EStack (Env Int)
     pushToEnv newEnv (identifier, exp) = do
       memAdd <- memoize exp
       return $ insertEnv identifier memAdd newEnv
+evalM (Let _ _) = throwError . EvalError $ "Let Begin: under construction"
 evalM (If cond thn els) = do
   -- If case
   eCond <- evalM cond
@@ -154,7 +152,7 @@ evalM (App rator []) = do
   -- Thunk application
   ratorVal <- evalM rator
   case ratorVal of
-    (T body env) -> local (const env) $ evalM body
+    (T body env) -> local (const env) . evalM . head $ body
     _ ->
       throwError
         . EvalError
@@ -211,11 +209,10 @@ getMemoizedValue identifier = do
 -- Else, places the exp in the memory table and returns its memory address
 -- This should be used whenever a *variable is bound to a value* to stay lazy
 memoize :: Exp -> EStack MemAddress
-memoize (Id var) = do
+memoize (Id var) =
   -- A bound variable, therefore it's a computation we have seen before.
   -- be careful and make sure the computation isn't evaluated (to stay lazy)
-  memAddress <- resolveIdentifier var
-  return memAddress
+  resolveIdentifier var
 memoize exp = do
   currEnv <- ask
   (updatedMemTable, memAddress) <- gets $ insertMem (Computation exp currEnv)
@@ -244,7 +241,7 @@ getVal var = M.lookup var . getMap
 insertMem :: a -> Mem a -> (Mem a, Int)
 insertMem v (Mem m i) =
   let nextAddress = succ i
-      newMap = (M.insert i v m)
+      newMap = M.insert i v m
    in (Mem newMap nextAddress, i)
 
 updateMem :: Int -> a -> Mem a -> Mem a
@@ -272,7 +269,8 @@ prepareDefaultBindings =
           ("zero?", createUnary zeroHuh),
           ("empty?", createUnary emptyHuh),
           ("fix", createUnary safeFix),
-          ("not", createUnary safeNot)
+          ("not", createUnary safeNot),
+          ("empty", E)
         ]
       (defaultEnv, memoryTable) =
         Prelude.foldr
@@ -294,7 +292,7 @@ prepareDefaultBindings =
           counter
    in (defaultEnv, updateMemTable memoryTable)
   where
-    createBuiltIn :: Int -> (EStack MemVal) -> MemVal
+    createBuiltIn :: Int -> EStack MemVal -> MemVal
     createBuiltIn m comp = compute m (Env M.empty)
       where
         compute 1 = C "1" (InterpE comp)
@@ -306,7 +304,7 @@ prepareDefaultBindings =
                 return . compute (pred n) $ env
             )
           where
-            identifier = (T.pack . show $ n)
+            identifier = T.pack . show $ n
 
     createBinary binOp = createBuiltIn 2 $ do
       v1 <- getMemoizedValue "2"
@@ -401,21 +399,24 @@ evalList (Def id binding : es) futureBindings env mem =
     topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
     topLevelFunction expId fb (Lambda [] body) =
       App
-        ( App
-            (Id "fix")
-            [ Lambda [expId, "_"] -- Todo: Should be a non-colliding variable
-                . Lambda []
-                $ foldr
-                  (Let . return)
-                  (Let [(expId, App (Id expId) [Id "_"])] body)
-                $ futureFunctions fb
-            ]
-        )
-        $ [NLiteral 0]
-    topLevelFunction expId fb (Lambda ps body) =
+        (App (Id "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
+        [NLiteral 0]
+      where
+        self = "_" -- Todo: Should be a non-colliding variable
+        newBody =
+          foldr
+            (\b r -> Let (NE.singleton b) [r])
+            ( Let
+                (NE.singleton (expId, App (Id expId) [Id self]))
+                body
+            )
+            fns
+        fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
+    topLevelFunction expId fb (Lambda ps [body]) =
       App
         (Id "fix")
-        [Lambda (expId : ps) $ foldr (Let . return) body $ futureFunctions fb]
+        [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
+    topLevelFunction _ _ (Lambda _ _) = error "Under construction"
     topLevelFunction _ _ b = b
 
     futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]

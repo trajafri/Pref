@@ -4,6 +4,7 @@
 module TH where
 
 import Control.Monad
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Language.Haskell.TH
 import Language.Haskell.TH.Quote
@@ -39,18 +40,17 @@ prefExpQ code =
 
 prefExpToHs :: E.Exp -> Q Exp
 prefExpToHs e = case e of
-  E.Empty -> [|[]|]
   E.Id t -> prefIdToHs . show $ t
   E.NLiteral i -> return . LitE . IntegerL . toInteger $ i
   E.SLiteral t -> return . LitE . StringL . show $ t
   E.BLiteral b -> return . ConE . mkName $ bName
     where
       bName = if b then "True" else "False"
-  E.Lambda vars b -> LamE hVars <$> prefExpToHs b
+  E.Lambda vars [b] -> LamE hVars <$> prefExpToHs b
     where
       hVars = map (VarP . mkName . tail . init . show) vars
   E.If q t f -> CondE <$> prefExpToHs q <*> prefExpToHs t <*> prefExpToHs f
-  E.Let bs b -> hBinds >>= \hBs -> LetE hBs <$> prefExpToHs b
+  E.Let bs [b] -> hBinds >>= \hBs -> LetE hBs <$> prefExpToHs b
     where
       hBinds =
         mapM
@@ -59,10 +59,13 @@ prefExpToHs e = case e of
                 return $
                   ValD (VarP . mkName . tail . init . show $ t) (NormalB hsBody) []
           )
-          bs
+          $ NE.toList bs
   E.App rator es ->
     prefExpToHs rator
       >>= \hE -> foldM (\f rand -> AppE f <$> prefExpToHs rand) hE es
+  E.Let _ _ -> error "let with begin form not supported"
+  E.Lambda _ _ -> error "lambda with begin form not supported"
+  E.Begin _ -> error "begin form not supported"
   E.Def _ _ -> error "define form not supported"
 
 prefIdToHs :: String -> Q Exp

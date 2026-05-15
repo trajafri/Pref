@@ -5,6 +5,7 @@ module Parser
   )
 where
 
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Lexer
 import Syntax.Exp
@@ -41,22 +42,33 @@ expParser =
     <|> stringParser
     <|> idParser
     <|> parens
-      (lambdaParser <|> letParser <|> ifParser <|> appParser)
+      (lambdaParser <|> beginParser <|> ifParser <|> letParser <|> appParser)
   where
     idParser :: Parsec T.Text () Exp
-    idParser = do
-      ident <- identifier
-      let val = if ident == "empty" then Syntax.Exp.Empty else (Id ident)
-      return val
+    idParser = Id <$> identifier
 
     boolParser :: Parsec T.Text () Exp
-    boolParser = bool >>= (return . BLiteral)
+    boolParser = BLiteral <$> bool
 
     decimalParser :: Parsec T.Text () Exp
-    decimalParser = decimal >>= (return . NLiteral . fromIntegral)
+    decimalParser = NLiteral . fromIntegral <$> decimal
 
     stringParser :: Parsec T.Text () Exp
-    stringParser = stringLiteral >>= (return . SLiteral)
+    stringParser = SLiteral <$> stringLiteral
+
+    expListParser :: Parsec T.Text () [Exp]
+    expListParser = many $ whiteSpace >> expParser
+
+    beginParser :: Parsec T.Text () Exp
+    beginParser = try $ do
+      whiteSpace
+      ident <- identifier
+      whiteSpace
+      case ident of
+        "begin" -> do
+          whiteSpace
+          Begin <$> expListParser
+        _ -> parserZero
 
     lambdaParser :: Parsec T.Text () Exp
     lambdaParser = try $ do
@@ -68,7 +80,7 @@ expParser =
           whiteSpace
           vars <- parens $ (whiteSpace >> identifier) `sepBy` whiteSpace
           whiteSpace
-          res <- Lambda vars <$> expParser
+          res <- Lambda vars <$> expListParser
           whiteSpace
           return res
         _ -> parserZero
@@ -80,24 +92,24 @@ expParser =
       whiteSpace
       case ident of
         "let" -> do
-          bindings <-
-            parens $
-              many $
-                whiteSpace
-                  >> parens
-                    ( do
-                        whiteSpace
-                        var <- identifier
-                        whiteSpace
-                        binding <- expParser
-                        whiteSpace
-                        return (var, binding)
-                    )
+          bindings <- parens ((NE.:|) <$> binding <*> many binding)
           whiteSpace
-          res <- Let bindings <$> expParser
+          res <- Let bindings <$> expListParser
           whiteSpace
           return res
         _ -> parserZero
+      where
+        binding =
+          whiteSpace
+            >> parens
+              ( do
+                  whiteSpace
+                  var <- identifier
+                  whiteSpace
+                  bnd <- expParser
+                  whiteSpace
+                  return (var, bnd)
+              )
 
     ifParser :: Parsec T.Text () Exp
     ifParser = try $ do
@@ -119,5 +131,4 @@ expParser =
       whiteSpace
       rator <- expParser
       whiteSpace
-      rands <- many $ whiteSpace >> expParser
-      return (App rator rands)
+      App rator <$> expListParser

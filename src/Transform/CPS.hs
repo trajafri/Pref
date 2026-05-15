@@ -4,14 +4,11 @@
 module Transform.CPS where
 
 import Control.Monad.State
-import Data.DList
+import qualified Data.DList as DL
 import Data.List ((\\))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Syntax.Exp
-import Prelude hiding
-  ( head,
-    tail,
-  )
 
 {- NOTE: This CPSer does not account for currying done
          by interpreter
@@ -55,7 +52,7 @@ removeVars _ c = c
 
 letToApp :: Exp -> Exp
 letToApp (Let bindings b) =
-  let (vars, vals) = unzip bindings in App (Lambda vars b) vals
+  let (vars, vals) = unzip (NE.toList bindings) in App (Lambda vars b) vals
 letToApp x = x
 
 {- Cpses every expression
@@ -66,15 +63,14 @@ letToApp x = x
    It only introduces continuation to expressions if needed -}
 cpser :: Exp -> State Collector Exp
 cpser i@(Id _) = return i
-cpser e@Empty = return e
 cpser n@(NLiteral _) = return n
 cpser s@(SLiteral _) = return s
 cpser b@(BLiteral _) = return b
-cpser (Lambda vars b) = do
+cpser (Lambda vars [b]) = do
   modify $ updateVars vars
   cpsedBody <- cpsExp b
   modify $ removeVars vars
-  return $ Lambda (vars ++ ["k"]) cpsedBody
+  return $ Lambda (vars ++ ["k"]) [cpsedBody]
 -- The way I am doing things, `if` ends up having three cases
 cpser (If (App rator rands) thn els) = do
   cpsedThn <- cpser thn
@@ -92,6 +88,8 @@ cpser (If cond thn els) = do
 cpser l@(Let _ _) = cpser $ letToApp l
 -- Application at top, so we apply `id` to the final result
 cpser (App rator rands) = extractCpsAppExp rator rands id
+cpser (Begin _) = undefined -- TODO: probably need to cps head, and rest within the head's continuation
+cpser (Lambda _ _) = undefined -- TODO: Same as begin
 cpser (Def v b) = do
   modify $ updateVars [v]
   cpsedBody <- cpser b
@@ -103,7 +101,6 @@ cpser (Def v b) = do
 -}
 cpsExp :: Exp -> State Collector Exp
 cpsExp i@(Id _) = return $ App (Id "k") [i] -- apply k to value
-cpsExp e@Empty = return $ App (Id "k") [e] -- apply k to value
 cpsExp n@(NLiteral _) = return $ App (Id "k") [n] -- apply k to value
 cpsExp s@(SLiteral _) = return $ App (Id "k") [s] -- apply k to value
 cpsExp b@(BLiteral _) = return $ App (Id "k") [b] -- apply k to value
@@ -122,6 +119,7 @@ cpsExp (If cond thn els) = do
 cpsExp l@(Let _ _) = cpsExp $ letToApp l
 cpsExp (App rator rands) =
   extractCpsAppExp rator rands $ \arg -> App (Id "k") [arg]
+cpsExp (Begin _) = undefined -- TODO: probably need to cps head, and rest within the head's continuation
 cpsExp (Def _ _) = undefined -- can't have definitions in a lambda yet
 
 {--**| Alright things are gonna get nasty now |**--}
@@ -141,11 +139,11 @@ cpsExp (Def _ _) = undefined -- can't have definitions in a lambda yet
     it's final result will be some argn. -}
 type K = ((Exp -> Exp) -> Exp)
 
-type AppCPSer = State (Int, DList Exp, Collector) K
+type AppCPSer = State (Int, DL.DList Exp, Collector) K
 
-type AppCPSerResult = (K, (Int, DList Exp, Collector))
+type AppCPSerResult = (K, (Int, DL.DList Exp, Collector))
 
-runAppCPSer :: Int -> DList Exp -> Collector -> AppCPSer -> AppCPSerResult
+runAppCPSer :: Int -> DL.DList Exp -> Collector -> AppCPSer -> AppCPSerResult
 runAppCPSer i ls c = flip runState (i, ls, c)
 
 getLastIndex :: AppCPSerResult -> Int
@@ -167,15 +165,15 @@ cpsApp [] = do
   exps <- gets $ \(_, a, _) -> a
   i <- gets $ \(a, _, _) -> a
   let finalResult = "arg" <> (T.pack . show $ i)
-  let e = head exps
-  let es = tail exps
+  let e = DL.head exps
+  let es = DL.tail exps
   case e of
     Id x -> modify $ \(a, b, c) -> (a, b, collect (x, length es) c)
     _ -> return ()
   collection <- gets thd
   let adjustedE = getFixedExp e collection
   let finalExp handleResult =
-        Lambda [finalResult] . handleResult . Id $ finalResult
+        Lambda [finalResult] . return . handleResult . Id $ finalResult
   let finalFunc handleResult = App adjustedE $ es ++ [finalExp handleResult]
   modify $ \(a, b, c) -> (a, b, updateVars [finalResult] c)
   return finalFunc {- Here, we reconstruct the original application from the
@@ -185,12 +183,12 @@ cpsApp [] = do
                    -- expression using its final values
 cpsApp (App rator rands : exs) = do
   vars <- gets $ \(_, b, _) -> b
-  modify $ \(a, _, c) -> (a, empty, c) -- This is because we want to start with a fresh list
+  modify $ \(a, _, c) -> (a, DL.empty, c) -- This is because we want to start with a fresh list
   currExpCont <- cpsApp (rator : rands) -- CPS the application, and get the cont function
   modify $ \(a, _, c) -> (a, vars, c)
   i <- gets $ \(a, _, _) -> a
-  modify $ \(a, b, c) -> (a, snoc b (Id ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
-  modify $ \(a, b, c) -> ((const $ succ i) a, b, c) -- If argn was used by last, the next should start with arg(n+1)
+  modify $ \(a, b, c) -> (a, DL.snoc b (Id ("arg" <> (T.pack . show $ i))), c) -- This is the result of the whole application
+  modify $ \(_, b, c) -> (succ i, b, c) -- If argn was used by last, the next should start with arg(n+1)
   nextExpsCont <- cpsApp exs
   -- Now, currExpCont is waiting for the result of `exs`
   let nextExps handleCont = const $ nextExpsCont handleCont
@@ -201,12 +199,12 @@ cpsApp (simpleExp : exs) = do
   let (cpsedSimpleExp, updatedCollection) =
         flip runState collection $ cpser simpleExp
   modify $ \(a, b, _) -> (a, b, updatedCollection)
-  modify $ \(a, b, c) -> (a, snoc b cpsedSimpleExp, c) -- The result is the expression cpsed
+  modify $ \(a, b, c) -> (a, DL.snoc b cpsedSimpleExp, c) -- The result is the expression cpsed
   cpsApp exs
 
 extractCpsAppExp :: Exp -> [Exp] -> (Exp -> Exp) -> State Collector Exp
 extractCpsAppExp rator rands handleFinalArg = do
   c <- get
-  let appCpser = runAppCPSer 0 empty c . cpsApp $ rator : rands
+  let appCpser = runAppCPSer 0 DL.empty c . cpsApp $ rator : rands
   put $ getCollection appCpser
   return . ($ handleFinalArg) . getLastArgHandler $ appCpser

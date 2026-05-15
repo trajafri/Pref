@@ -7,6 +7,7 @@ module Transform.Uniquify where
 
 import Control.Monad.Reader
 import Control.Monad.State
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -60,7 +61,6 @@ genSym v = do
     Nothing -> undefined
 
 uniquify :: Exp -> StateT (M.Map T.Text Int) (Reader Env) Exp
-uniquify Empty = return Empty
 uniquify (Id v) =
   if S.member v builtIns
     then return (Id v)
@@ -76,19 +76,19 @@ uniquify (Lambda vs b) = do
   vars <- mapM genSym vs
   uniqueB <-
     local (\env -> foldl (\e (v, i) -> M.insert v i e) env vars) $
-      uniquify b
+      mapM uniquify b
   return $ Lambda [v <> "." <> (T.pack . show $ i) | (v, i) <- vars] uniqueB
 uniquify (If q t f) = If <$> uniquify q <*> uniquify t <*> uniquify f
 uniquify (Let ps b) = do
-  let (vs, es) = unzip ps
+  let (vs, es) = unzip (NE.toList ps)
   vars <- mapM genSym vs
   exps <- mapM uniquify es
   uniqueB <-
     local (\env -> foldl (\e (v, i) -> M.insert v i e) env vars) $
-      uniquify b
+      mapM uniquify b
   return $
     Let
-      [(v <> "." <> (T.pack . show $ i), e) | ((v, i), e) <- zip vars exps]
+      (NE.fromList [(v <> "." <> (T.pack . show $ i), e) | ((v, i), e) <- zip vars exps])
       uniqueB
 uniquify (App rator rands) = App <$> uniquify rator <*> mapM uniquify rands
 uniquify _ = undefined
@@ -105,7 +105,7 @@ uniquifyProgram (Def v e : es) env = do
   let newEnv = M.insert v i env
   uniqueE <- local (const newEnv) $ uniquify e
   rest <- uniquifyProgram es newEnv
-  return $ (Def (uV <> "." <> (T.pack . show $ i)) uniqueE : rest)
+  return $ Def (uV <> "." <> (T.pack . show $ i)) uniqueE : rest
 uniquifyProgram (e : es) env = do
   uniqueE <- local (const env) $ uniquify e
   rest <- uniquifyProgram es env

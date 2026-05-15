@@ -44,10 +44,12 @@ cps (defineFree, fp) = do
     defineFreeVar (var, arity) =
       let vars = map (T.pack . ("var" <>) . show) [1 .. arity]
        in Def (var <> "k") $
-            Lambda (vars <> ["k"]) $
-              App
-                (Id "k")
-                [App (Id var) $ map Id vars]
+            Lambda
+              (vars <> ["k"])
+              [ App
+                  (Id "k")
+                  [App (Id var) $ map Id vars]
+              ]
 
 main :: IO ()
 main = execParser opts >>= cps
