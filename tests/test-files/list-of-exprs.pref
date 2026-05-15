@@ -1,0 +1,24 @@
+; `begin` allows multiple expressions
+; value of last expression is returned
+(begin
+   (define two 2)
+   (define forty 40)
+   (+ 40 2))
+
+; function bodies are `begin` bodies
+(define (nested-define-42)
+   (define two 2)
+   (define forty 40)
+   (+ 40 2))
+(nested-define-42)
+
+((lambda ()
+    (define two 2)
+    (define forty 40)
+    (+ 40 2)))
+
+(let ([fortyTwo (begin
+                   (define two 2)
+                   (define forty 40)
+                   (+ 40 2))])
+   fortyTwo)
