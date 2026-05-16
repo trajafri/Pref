@@ -105,8 +105,11 @@ type EStack val =
 -- Interpreter
 --------------------------------------------------------------------
 
+runEval :: Env -> Mem Box -> EStack val -> Either EvalError val
+runEval env mem = (`runReaderT` env) . (`evalStateT` mem)
+
 eval :: Exp -> Env -> Mem Box -> Either EvalError Val
-eval e env mem = (`runReaderT` env) . (`evalStateT` mem) . evalM $ e
+eval e env mem = runEval env mem . evalM $ e
 
 evalM :: Exp -> EStack Val
 evalM (SLiteral s) = return $ S s -- Strings
@@ -159,8 +162,8 @@ evalList ::
   [Exp] ->
   Env ->
   Mem Box ->
-  Either EvalError [Val]
-evalList expList = helper expList futureBindings
+  EStack [Val]
+evalList expList env0 mem0 = either throwError return (helper expList futureBindings env0 mem0)
   where
     futureBindings = [(i, b) | (Def i b) <- expList]
     helper [] _ _ _ = return []
@@ -420,11 +423,11 @@ prepareDefaultBindings =
 codeToAst :: T.Text -> Either ParseError [Exp]
 codeToAst code = either throwError return $ runParser parse () "" code
 
-codeToVal :: T.Text -> Either EvalError (Either ParseError [Val])
+codeToVal :: T.Text -> Either ParseError (Either EvalError [Val])
 codeToVal code = case codeToAst code of
-  Left e -> return . Left $ e
-  Right ast -> case evalList ast defaultEnv defaultMem of
-    Left e -> Left e
+  Left e -> Left e
+  Right ast -> case runEval defaultEnv defaultMem $ evalList ast defaultEnv defaultMem of
+    Left e -> return . Left $ e
     Right vals -> return . Right $ vals
   where
     (defaultEnv, defaultMem) = prepareDefaultBindings
