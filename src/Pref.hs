@@ -158,12 +158,11 @@ evalM (Def _ _) =
     $ "A non-top level `defined` expression is not supported"
 
 -- TODO: Memory can be updated by top-level expressions in cbr
-evalList ::
-  [Exp] ->
-  Env ->
-  Mem Box ->
-  EStack [Val]
-evalList expList env0 mem0 = either throwError return (helper expList futureBindings env0 mem0)
+evalList :: [Exp] -> EStack [Val]
+evalList expList = do
+  env0 <- ask
+  mem0 <- get
+  either throwError return (helper expList futureBindings env0 mem0)
   where
     futureBindings = [(i, b) | (Def i b) <- expList]
     helper [] _ _ _ = return []
@@ -426,7 +425,7 @@ codeToAst code = either throwError return $ runParser parse () "" code
 codeToVal :: T.Text -> Either ParseError (Either EvalError [Val])
 codeToVal code = case codeToAst code of
   Left e -> Left e
-  Right ast -> case runEval defaultEnv defaultMem $ evalList ast defaultEnv defaultMem of
+  Right ast -> case runEval defaultEnv defaultMem $ evalList ast of
     Left e -> return . Left $ e
     Right vals -> return . Right $ vals
   where
