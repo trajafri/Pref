@@ -9,7 +9,7 @@ module Pref
     evaluatePref,
     Env (..),
     Val (..),
-    Box (..),
+    Computation (..),
     PrefComputation (PrefE),
   )
 where
@@ -35,15 +35,6 @@ import Prelude hiding
 
 -- Type Setup
 -----------------------------------------------------------------
-
-type MemAddress = Int
-
-data Mem d = Mem
-  { getMappings :: M.Map MemAddress d,
-    getCounter :: Int
-  }
-
-newtype Env = Env {getMap :: M.Map Identifier MemAddress} deriving (Eq, Show)
 
 data Val
   = S T.Text
@@ -78,37 +69,49 @@ instance Show Val where
   show V = "<void>"
 
 -- Interpreter can see two kinds of computations
--- 1. An expression written in Pref
--- 2. A program written in haskell by the interpreter.
---    These programs are used to implement built-in functions
-data PrefComputation = PrefE Exp | InterpE (EStack Val)
+-- 1. An expression written in Pref.
+-- 2. A program written in Haskell.
+data PrefComputation = PrefE Exp | HaskE (EStack Val)
 
 -- `Eq` is implemented only for testing purposes
--- Since there's no point to testing two partial haskell
--- computations, all cases with `InterpE` are not equal
 instance Eq PrefComputation where
   (PrefE exp1) == (PrefE exp2) = exp1 == exp2
+  -- Since there's no point to testing two partial Haskell
+  -- computations, all cases with `HaskE` are not equal
   _ == _ = False
 
--- Box represents a computation in a lazy interpreter
+newtype Env = Env
+  { getMap :: M.Map Identifier ComputationPtr
+  }
+  deriving (Eq, Show)
+
+type ComputationPtr = MemAddress Computation
+
+newtype MemAddress d = Addr Int deriving (Eq, Show, Ord)
+
 -- For a strict interpreter, we never use the `Computation` constructor
-data Box
+data Computation
   = Computed Val
   | -- | a value that hasn't been computed yet,
     Computation Exp Env
   deriving (Eq, Show)
 
+data Mem d = Mem
+  { getMappings :: M.Map (MemAddress d) d,
+    getCounter :: Int
+  }
+
 -- interpreter's monad stack
 type EStack val =
-  StateT (Mem Box) (ReaderT Env (Either EvalError)) val
+  StateT (Mem Computation) (ReaderT Env (Either EvalError)) val
 
 -- Interpreter
 --------------------------------------------------------------------
 
-runEval :: Env -> Mem Box -> EStack val -> Either EvalError val
+runEval :: Env -> Mem Computation -> EStack val -> Either EvalError val
 runEval env mem = (`runReaderT` env) . (`evalStateT` mem)
 
-eval :: Exp -> Env -> Mem Box -> Either EvalError Val
+eval :: Exp -> Env -> Mem Computation -> Either EvalError Val
 eval e env mem = runEval env mem . evalM $ e
 
 evalM :: Exp -> EStack Val
@@ -215,7 +218,7 @@ applyClosure (C identifier body env) rand remainingRands = do
   --       to evaluate the closure's body. It doesn't actually run it
   let evalBody = local (const localEnv) $ case body of
         (PrefE exp) -> evalM exp
-        (InterpE comp) -> comp
+        (HaskE comp) -> comp
   case remainingRands of
     [] -> evalBody -- no more arguments, so just return whatever body returns
     (r : rs) -> do
@@ -244,7 +247,7 @@ getMemoizedValue identifier@(Var identifierTxt) = do
 -- If given a variable, get's the memory address for the value it points to
 -- Else, places the exp in the memory table and returns its memory address
 -- This should be used whenever a *variable is bound to a value* to stay lazy
-memoize :: Exp -> EStack MemAddress
+memoize :: Exp -> EStack ComputationPtr
 memoize (Id var) =
   -- A bound variable, therefore it's a computation we have seen before.
   -- be careful and make sure the computation isn't evaluated (to stay lazy)
@@ -255,7 +258,7 @@ memoize exp = do
   put updatedMemTable
   return memAddress
 
-resolveIdentifier :: Identifier -> EStack Int
+resolveIdentifier :: Identifier -> EStack ComputationPtr
 resolveIdentifier identifier@(Var identifierTxt) = do
   env <- ask
   case getVal identifier env of
@@ -267,30 +270,31 @@ resolveIdentifier identifier@(Var identifierTxt) = do
           <> identifierTxt
           <> "'"
 
-insertEnv :: Identifier -> MemAddress -> Env -> Env
+insertEnv :: Identifier -> ComputationPtr -> Env -> Env
 insertEnv k b = Env . M.insert k b . getMap
 
-getVal :: Identifier -> Env -> Maybe MemAddress
+getVal :: Identifier -> Env -> Maybe ComputationPtr
 getVal var = M.lookup var . getMap
 
 -- Updates the memory map, and returns the added data's memory address
-insertMem :: a -> Mem a -> (Mem a, Int)
+insertMem :: a -> Mem a -> (Mem a, MemAddress a)
 insertMem v m =
   let i = getCounter m
+      address = Addr i
       nextAddress = succ i
-      newMap = M.insert i v . getMappings $ m
-   in (Mem newMap nextAddress, i)
+      newMap = M.insert address v . getMappings $ m
+   in (Mem newMap nextAddress, address)
 
-updateMem :: Int -> a -> Mem a -> Mem a
+updateMem :: MemAddress a -> a -> Mem a -> Mem a
 updateMem id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
 
-getMemMapping :: Int -> Mem a -> Maybe a
+getMemMapping :: MemAddress a -> Mem a -> Maybe a
 getMemMapping id = M.lookup id . getMappings
 
 -- Setup for usage
 -----------------------------------------------------------------
 
-prepareDefaultBindings :: (Env, Mem Box)
+prepareDefaultBindings :: (Env, Mem Computation)
 prepareDefaultBindings =
   let defaultBindings :: [(T.Text, Val)]
       defaultBindings =
@@ -333,11 +337,11 @@ prepareDefaultBindings =
     createBuiltIn :: Int -> EStack Val -> Val
     createBuiltIn m comp = compute m (Env M.empty)
       where
-        compute 1 = C (Var "1") (InterpE comp)
+        compute 1 = C (Var "1") (HaskE comp)
         compute n =
           C
             identifier
-            ( InterpE $ do
+            ( HaskE $ do
                 env <- ask
                 return . compute (pred n) $ env
             )
@@ -400,14 +404,15 @@ prepareDefaultBindings =
     emptyHuh E = return $ B True
     emptyHuh _ = return $ B False
 
+    -- TODO: Consider fix for thunks
     safeFix :: Val -> EStack Val
     safeFix (C identifier (PrefE b) env) = do
       -- we do the following to allow circular mapping:
-      -- \* store closure's body at memory address `M`
-      -- \* bind closure's identifier to `M`
-      -- \* update computation at `M` to use environment that maps
-      --   `identifier` to `M` (itself)
-      -- \* evaluate body with the "fixed" environment mentioned above
+      -- 1. store closure's body at memory address `M`
+      -- 2. bind closure's identifier to `M`
+      -- 3. update computation at `M` to use environment that maps
+      --    `identifier` to `M` (itself)
+      -- 4. evaluate body with the "fixed" environment mentioned above
       (uMem, memId) <- gets $ insertMem (Computation b env)
       put uMem
       let fixedEnv = insertEnv identifier memId env
