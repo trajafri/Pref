@@ -32,12 +32,12 @@ allTests =
   [ assertEqual
       (show $ test <> errorMsg)
       [e]
-      (either (\_ -> []) (fromRight []) $ codeToVal test)
+      (either (const []) (fromRight []) $ codeToVal test)
     | (test, e) <-
         [ ("1", I 1),
           ("\"a\"", S "a"),
           ( "(lambda (x) 2)",
-            C (Var "x") (PrefE $ NLiteral 2) (fst prepareDefaultBindings)
+            C (Var "x") (PrefE $ NLiteral 2) (case prepareDefaultBindings of (s, _, _) -> s)
           ),
           ("((lambda (x) 2) 3)", I 2),
           ("((lambda (x) x) 3)", I 3),
