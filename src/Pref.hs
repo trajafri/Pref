@@ -17,9 +17,7 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.List.NonEmpty as NE (singleton)
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Errors
 import Parser
@@ -38,7 +36,7 @@ data Val
     -- Note that a closure doesn't contain an `Exp`
     C Identifier PrefComputation Scope
   | -- | Thunk
-    T [Exp] Scope
+    T Exp Scope
   | Cons Val Val
   | -- | Empty list
     E
@@ -170,6 +168,11 @@ computationWrite ptr cmp = do
   St memC memE <- get
   put $ St (mset ptr cmp memC) memE
 
+scopeWrite :: Scope -> Env -> EStack ()
+scopeWrite scope env = do
+  St memC memE <- get
+  put $ St memC (mset scope env memE)
+
 computationDeref :: ComputationPtr -> EStack Computation
 computationDeref ptr = do
   memC <- gets getComputationMappings
@@ -202,14 +205,18 @@ evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
 evalM (Id identifier) = resolveIdentifier identifier
-evalM (Begin _) = throwError . EvalError $ "Begin: under construction"
-evalM (Lambda [] [body]) = asks $ T [body] -- Thunk case
-evalM (Lambda [identifier] [body]) =
-  asks $ C identifier (PrefE body) -- Lambda base case
-evalM (Lambda (identifier : ids) [body]) = evalM $ Lambda [identifier] [Lambda ids [body]] -- Lambda currying case
-evalM (Lambda _ _) = throwError . EvalError $ "Lambda Begin: under construction"
-evalM (Let bindings [body]) = evalInLocalScope bindings $ evalM body
-evalM (Let _ _) = throwError . EvalError $ "Let Begin: under construction"
+evalM (Begin es) = snd <$> evalList es
+evalM (Lambda [] body) =
+  -- Thunk case
+  asks $ T . Begin $ body
+evalM (Lambda [identifier] body) =
+  -- Lambda base case
+  asks $ C identifier (PrefE . Begin $ body)
+evalM (Lambda (identifier : ids) body) =
+  -- Lambda currying case
+  evalM $ Lambda [identifier] [Lambda ids body]
+evalM (Let bindings body) =
+  evalInLocalScope bindings $ evalM (Begin body)
 evalM (If cond thn els) = do
   -- If case
   eCond <- evalM cond
@@ -224,60 +231,19 @@ evalM (App rator (rand : rands)) = do
   -- Function application
   ratorVal <- evalM rator
   applyClosure ratorVal rand rands
-evalM (Def _ _) =
-  throwError
-    . EvalError
-    $ "A non-top level `defined` expression is not supported"
+evalM (Def i e) = do
+  addBinding i e
+  return V
 
--- TODO: Memory can be updated by top-level expressions in cbr
-evalList :: [Exp] -> EStack [Val]
-evalList expList = do
-  scope <- ask
-  St memC memE <- get
-  let env0 = fromMaybe (Env M.empty) $ mget scope memE
-  either throwError return (helper expList futureBindings scope env0 memC memE)
-  where
-    futureBindings = [(i, b) | (Def i b) <- expList]
-    helper [] _ _ _ _ _ = return []
-    helper (Def id binding : es) fBs scp env memCmp memEnv =
-      let newFutures = drop 1 fBs
-          fixedBinding = topLevelFunction id newFutures binding
-          (uMemC, memId) = malloc (Computation fixedBinding scp) memCmp
-          val = memId
-          newEnv = insertEnv id val env
-          uMemE = mset scp newEnv memEnv
-       in helper es newFutures scp newEnv uMemC uMemE
-      where
-        topLevelFunction :: Identifier -> [(Identifier, Exp)] -> Exp -> Exp
-        topLevelFunction expId fb (Lambda [] body) =
-          App
-            (App (Id . Var $ "fix") [Lambda [expId, self] [Lambda [] [newBody]]])
-            [NLiteral 0]
-          where
-            self = Var "_" -- Todo: Should be a non-colliding variable
-            newBody =
-              foldr
-                (\b r -> Let (NE.singleton b) [r])
-                ( Let
-                    (NE.singleton (expId, App (Id expId) [Id self]))
-                    body
-                )
-                fns
-            fns = futureFunctions fb <> [(expId, App (Id expId) [Id self])]
-        topLevelFunction expId fb (Lambda ps [body]) =
-          App
-            (Id . Var $ "fix")
-            [Lambda (expId : ps) [foldr (\b r -> Let (NE.singleton b) [r]) body $ futureFunctions fb]]
-        topLevelFunction _ _ (Lambda _ _) = error "Under construction"
-        topLevelFunction _ _ b = b
-
-        futureFunctions :: [(Identifier, Exp)] -> [(Identifier, Exp)]
-        futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
-          modify $ drop 1
-          currFutureBindings <- get
-          return (name, topLevelFunction name currFutureBindings func)
-    helper (exp : es) fb scp env memCmp memEnv =
-      (:) <$> eval exp scp memCmp memEnv <*> helper es fb scp env memCmp memEnv
+evalList :: [Exp] -> EStack ([Val], Val)
+evalList [] = return ([], V)
+evalList [e] = evalM e >>= \v -> return ([v], v)
+evalList (e : es) = do
+  v <- evalM e
+  (res, lastVal) <- evalList es
+  case v of
+    V -> return (res, lastVal)
+    _ -> return (v : res, lastVal)
 
 -- Utilities
 --------------------------------------------------------------------
@@ -308,19 +274,30 @@ evalInLocalScope bindings localEval = do
 evalInCapturedScope :: (Foldable t) => Scope -> t (Identifier, Exp) -> EStack Val -> EStack Val
 evalInCapturedScope scope bindings localEval = do
   env <- scopeDeref scope
-  localEnv <- foldM (\newEnv (id, exp) -> addBinding id exp newEnv) env bindings
+  localEnv <-
+    foldM
+      (\newEnv (id, exp) -> addBindingToEnv id exp newEnv)
+      env
+      bindings
   localScope <- scopeAlloc localEnv
   local (const localScope) localEval
 
-addBinding :: Identifier -> Exp -> Env -> EStack Env
-addBinding id exp env = do
+addBindingToEnv :: Identifier -> Exp -> Env -> EStack Env
+addBindingToEnv id exp env = do
   scp <- ask
   ptr <- computationAlloc exp scp
   return $ insertEnv id ptr env
 
+addBinding :: Identifier -> Exp -> EStack ()
+addBinding id exp = do
+  scope <- ask
+  env <- getEnvForCurrentScope
+  newEnv <- addBindingToEnv id exp env
+  scopeWrite scope newEnv
+
 invokeThunk :: Val -> EStack Val
 invokeThunk (T body capturedScope) =
-  evalInCapturedScope capturedScope Nothing $ evalM . head $ body
+  evalInCapturedScope capturedScope Nothing $ evalM $ body
 invokeThunk v =
   throwError
     . EvalError
@@ -482,7 +459,7 @@ codeToVal code = case codeToAst code of
   Left e -> Left e
   Right ast -> case runEval scope defaultMem memE $ evalList ast of
     Left e -> return . Left $ e
-    Right vals -> return . Right $ vals
+    Right (vals, _) -> return . Right $ vals
   where
     (scope, memE, defaultMem) = prepareDefaultBindings
 

@@ -21,20 +21,9 @@ variableParser = Var <$> identifier
 parse :: Parsec T.Text () [Exp]
 parse =
   many $
-    whiteSpace >> (defineParser <|> expParser <|> failIfRight) >>= \exp ->
+    whiteSpace >> (expParser <|> failIfRight) >>= \exp ->
       whiteSpace >> return exp
   where
-    defineParser :: Parsec T.Text () Exp
-    defineParser = try . parens $ do
-      define <- identifier
-      whiteSpace
-      case define of
-        "define" -> do
-          ident <- variableParser
-          whiteSpace
-          Def ident <$> expParser
-        _ -> parserZero
-
     failIfRight :: Parsec T.Text () Exp
     failIfRight = string ")" >> unexpected "dangling right paren"
 
@@ -45,7 +34,7 @@ expParser =
     <|> stringParser
     <|> identifierParser
     <|> parens
-      (lambdaParser <|> beginParser <|> ifParser <|> letParser <|> appParser)
+      (defineParser <|> lambdaParser <|> beginParser <|> ifParser <|> letParser <|> appParser)
   where
     identifierParser :: Parsec T.Text () Exp
     identifierParser = Id <$> variableParser
@@ -62,15 +51,16 @@ expParser =
     expListParser :: Parsec T.Text () [Exp]
     expListParser = many $ whiteSpace >> expParser
 
-    beginParser :: Parsec T.Text () Exp
-    beginParser = try $ do
+    defineParser :: Parsec T.Text () Exp
+    defineParser = try $ do
       whiteSpace
       ident <- identifier
       whiteSpace
       case ident of
-        "begin" -> do
+        "define" -> do
+          var <- variableParser
           whiteSpace
-          Begin <$> expListParser
+          Def var <$> expParser
         _ -> parserZero
 
     lambdaParser :: Parsec T.Text () Exp
@@ -86,6 +76,17 @@ expParser =
           res <- Lambda vars <$> expListParser
           whiteSpace
           return res
+        _ -> parserZero
+
+    beginParser :: Parsec T.Text () Exp
+    beginParser = try $ do
+      whiteSpace
+      ident <- identifier
+      whiteSpace
+      case ident of
+        "begin" -> do
+          whiteSpace
+          Begin <$> expListParser
         _ -> parserZero
 
     letParser :: Parsec T.Text () Exp
