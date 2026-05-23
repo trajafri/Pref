@@ -135,6 +135,9 @@ resolveIdentifierToPtr identifier@(Var identifierTxt) env = do
 -- state/memory utilities
 -----------------------------------------------------------------
 
+initMem :: Mem a
+initMem = Mem M.empty 0
+
 malloc :: a -> Mem a -> (Mem a, MemAddress a)
 malloc v m =
   let i = getCounter m
@@ -189,7 +192,7 @@ scopeDeref scope = do
     Nothing ->
       throwError
         . EvalError
-        $ "<Internal Memory error when fetching environment>"
+        $ "<Internal Memory error when fetching environment " <> (T.pack . show $ scope) <> ">"
 
 -- Interpreter
 --------------------------------------------------------------------
@@ -363,10 +366,11 @@ prepareDefaultBindings =
               let (newMem, ptr) = malloc (Computed val) m
                in (insertEnv (Var builtin) ptr e, newMem)
           )
-          (Env M.empty, Mem M.empty 0)
+          (Env M.empty, initMem)
           defaultBindings
-      memE = fst $ malloc defaultEnv (Mem M.empty scopeAdr)
-   in (globalScope, memE, memC)
+      initMemE = initMem
+      memE = fst $ malloc defaultEnv initMemE
+   in (Addr . getCounter $ initMemE, memE, memC)
   where
     scopeAdr = 0
     globalScope = Addr scopeAdr
