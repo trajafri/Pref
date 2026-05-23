@@ -9,7 +9,6 @@ module Pref
     Env (..),
     Val (..),
     Computation (..),
-    PrefComputation (PrefE),
   )
 where
 
@@ -33,16 +32,16 @@ data Val
   | I Int
   | B Bool
   | -- | Closure
-    -- Note that a closure doesn't contain an `Exp`
-    C Identifier PrefComputation Scope
+    C Identifier Exp Scope
   | -- | Thunk
     T Exp Scope
+  | -- | Internal code
+    Internal String ((Exp, Scope) -> EStack Val)
   | Cons Val Val
   | -- | Empty list
     E
   | -- | Void
     V
-  deriving (Eq)
 
 instance Show Val where
   show (S s) = T.unpack s
@@ -50,6 +49,7 @@ instance Show Val where
   show (B b) = show b
   show (C (Var s) _ _) = "<lambda:" <> T.unpack s <> ">"
   show (T _ _) = "<thunk>"
+  show (Internal n _) = "<internal " <> n <> ">"
   show ls@(Cons _ _) =
     "(list"
       <> foldr (\x y -> " " <> x <> y) ")" (contents ls)
@@ -59,18 +59,6 @@ instance Show Val where
       contents a = [show a]
   show E = "empty"
   show V = "<void>"
-
--- Interpreter can see two kinds of computations
--- 1. An expression written in Pref.
--- 2. A program written in Haskell.
-data PrefComputation = PrefE Exp | HaskE (EStack Val)
-
--- `Eq` is implemented only for testing purposes
-instance Eq PrefComputation where
-  (PrefE exp1) == (PrefE exp2) = exp1 == exp2
-  -- Since there's no point to testing two partial Haskell
-  -- computations, all cases with `HaskE` are not equal
-  _ == _ = False
 
 newtype MemAddress d = Addr Int deriving (Eq, Show, Ord)
 
@@ -88,7 +76,7 @@ data Computation
   = Computed Val
   | -- | a value that hasn't been computed yet,
     Computation Exp Scope
-  deriving (Eq, Show)
+  deriving (Show)
 
 data Mem d = Mem
   { getMappings :: M.Map (MemAddress d) d,
@@ -214,7 +202,7 @@ evalM (Lambda [] body) =
   asks $ T . Begin $ body
 evalM (Lambda [identifier] body) =
   -- Lambda base case
-  asks $ C identifier (PrefE . Begin $ body)
+  asks $ C identifier (Begin body)
 evalM (Lambda (identifier : ids) body) =
   -- Lambda currying case
   evalM $ Lambda [identifier] [Lambda ids body]
@@ -300,29 +288,31 @@ addBinding id exp = do
 
 invokeThunk :: Val -> EStack Val
 invokeThunk (T body capturedScope) =
-  evalInCapturedScope capturedScope Nothing $ evalM $ body
+  evalInCapturedScope capturedScope Nothing $ evalM body
 invokeThunk v =
   throwError
     . EvalError
     $ "Bad application\nExpected thunk, got " <> (T.pack . show $ v)
 
 applyClosure :: Val -> Exp -> [Exp] -> EStack Val
-applyClosure (C identifier body scope) rand0 randRest =
-  let bodyEval :: EStack Val
-      bodyEval = evalInCapturedScope scope [(identifier, rand0)] $
-        case body of
-          (PrefE exp) -> evalM exp
-          (HaskE comp) -> comp
-   in case randRest of
-        [] -> bodyEval
-        (rand1 : rands) -> do
-          closure <- bodyEval
-          applyClosure closure rand1 rands
-applyClosure _ _ _ =
-  throwError
-    . EvalError
-    $ "Bad application\nA non-function was used like a function"
-      <> "\nPerhaps a function was applied to too many arguments?"
+applyClosure v rand0 randRest =
+  case randRest of
+    [] -> bodyEval
+    (rand1 : rands) -> do
+      closure <- bodyEval
+      applyClosure closure rand1 rands
+  where
+    bodyEval :: EStack Val
+    bodyEval = case v of
+      (C identifier body scope) ->
+        evalInCapturedScope scope [(identifier, rand0)] $ evalM body
+      (Internal _ f) -> do
+        localScope <- ask
+        f (rand0, localScope)
+      _ ->
+        throwError . EvalError $
+          "Bad application\nA non-function was used like a function"
+            <> "\nPerhaps a function was applied to too many arguments?"
 
 -- Setup for usage
 -----------------------------------------------------------------
@@ -357,8 +347,8 @@ prepareDefaultBindings =
       defaultBindings :: [(T.Text, Val)]
       defaultBindings =
         constants
-          <> [(func, createUnary code) | (func, code) <- unaries]
-          <> [(func, createBinary code) | (func, code) <- binaries]
+          <> [(func, createUnary (T.unpack func) code) | (func, code) <- unaries]
+          <> [(func, createBinary (T.unpack func) code) | (func, code) <- binaries]
 
       (defaultEnv, memC) =
         foldr
@@ -372,26 +362,18 @@ prepareDefaultBindings =
       memE = fst $ malloc defaultEnv initMemE
    in (Addr . getCounter $ initMemE, memE, memC)
   where
-    scopeAdr = 0
-    globalScope = Addr scopeAdr
+    createBinary n binOp = Internal n $
+      \(e1, s1) -> return $
+        Internal n $
+          \(e2, s2) -> do
+            v1 <- local (const s1) $ evalM e1
+            v2 <- local (const s2) $ evalM e2
+            binOp v1 v2
 
-    createBuiltIn :: Int -> EStack Val -> Val
-    createBuiltIn m comp = compute m globalScope
-      where
-        compute 1 = C (Var "1") (HaskE comp)
-        compute n =
-          C identifier (HaskE . asks . compute . pred $ n)
-          where
-            identifier = Var . T.pack . show $ n
-
-    createBinary binOp = createBuiltIn 2 $ do
-      v1 <- resolveIdentifier $ Var "2"
-      v2 <- resolveIdentifier $ Var "1"
-      binOp v1 v2
-
-    createUnary unOp = createBuiltIn 1 $ do
-      v1 <- resolveIdentifier $ Var "1"
-      unOp v1
+    createUnary n unOp = Internal n $
+      \(e, s) -> do
+        v <- local (const s) $ evalM e
+        unOp v
 
     safePlus :: Val -> Val -> EStack Val
     safePlus (I n) (I m) = return . I $ n + m
@@ -442,7 +424,7 @@ prepareDefaultBindings =
 
     -- TODO: Consider fix for thunks
     safeFix :: Val -> EStack Val
-    safeFix (C identifier (PrefE b) scope) = do
+    safeFix (C identifier b scope) = do
       evalInCapturedScope scope [(identifier, b)] $ do
         localScope <- ask
         localEnv <- getEnvForCurrentScope
