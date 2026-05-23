@@ -1,5 +1,10 @@
 # Revision history for Pref
 
+## 0.7.0.0 -- 2026-05-23
+* `begin`
+* proper `define`
+* Haskell functions to represent built-in operators
+
 ## 0.6.0.0 -- 2021-09-06
 
 * Allow built-in functions to be used like normal functions
