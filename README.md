@@ -82,6 +82,7 @@ Unlike the `let` form, functions defined via `define` can be mutually recursive.
 
 * Allow user to choose an evaluation strategy by passing in certain flags.
 * Data Types: Allow user to define their own data type and (maybe) using pattern matching to work with the data.
+* Lazy lists. Even in a lazy interpreter, `cons` currentlty force evaluates its arguments.
 * Error Locations: Both parser and the interpreter should indicate the location where the error occured.
 * Compiler: compile Pref to x86.
 * Infix Grammar: Try to use the same interpreter on an infix version of Pref (I guess it will be called *Infi* if that happens).
