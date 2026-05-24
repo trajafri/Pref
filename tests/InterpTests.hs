@@ -21,9 +21,6 @@ import Test.Tasty.Golden.Advanced
 location :: String
 location = "tests/test-files"
 
-errorMsg :: T.Text
-errorMsg = " interpreted incorrectly"
-
 interpTestList :: IO TestTree
 interpTestList = do
   testFiles <- findByExtension [".pref"] location
@@ -44,11 +41,11 @@ interpTestList = do
                       (inVal /= expVal)
                       ( Left $
                           input
-                            <> (T.unpack errorMsg)
+                            <> " interpreted incorrectly"
                             <> "\nExpected:\n"
-                            <> (show expVal)
+                            <> show expVal
                             <> "\nGot:\n"
-                            <> (show inVal)
+                            <> show inVal
                       )
                 )
           )
