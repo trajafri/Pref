@@ -36,7 +36,7 @@ data Val
   | -- | Thunk
     T Exp Scope
   | -- | Internal code
-    Internal String ((Exp, Scope) -> EStack Val)
+    Internal T.Text (ValPtr -> EStack Val)
   | Cons Val Val
   | -- | Empty list
     E
@@ -49,7 +49,7 @@ instance Show Val where
   show (B b) = show b
   show (C (Var s) _ _) = "<lambda:" <> T.unpack s <> ">"
   show (T _ _) = "<thunk>"
-  show (Internal n _) = "<internal " <> n <> ">"
+  show (Internal n _) = "<internal " <> T.unpack n <> ">"
   show ls@(Cons _ _) =
     "(list"
       <> foldr (\x y -> " " <> x <> y) ")" (contents ls)
@@ -65,11 +65,11 @@ newtype MemAddress d = Addr Int deriving (Eq, Show, Ord)
 type Scope = MemAddress Env
 
 newtype Env = Env
-  { getMap :: M.Map Identifier ComputationPtr
+  { getMap :: M.Map Identifier ValPtr
   }
   deriving (Eq, Show)
 
-type ComputationPtr = MemAddress Computation
+type ValPtr = MemAddress Computation
 
 -- For a strict interpreter, we never use the `Computation` constructor
 data Computation
@@ -98,10 +98,10 @@ type EStack val =
 -- env utilities
 -----------------------------------------------------------------
 
-insertEnv :: Identifier -> ComputationPtr -> Env -> Env
+insertEnv :: Identifier -> ValPtr -> Env -> Env
 insertEnv k b = Env . M.insert k b . getMap
 
-getVal :: Identifier -> Env -> Maybe ComputationPtr
+getVal :: Identifier -> Env -> Maybe ValPtr
 getVal var = M.lookup var . getMap
 
 getEnvForCurrentScope :: EStack Env
@@ -109,7 +109,7 @@ getEnvForCurrentScope = do
   scope <- ask
   scopeDeref scope
 
-resolveIdentifierToPtr :: Identifier -> Env -> EStack ComputationPtr
+resolveIdentifierToPtr :: Identifier -> Env -> EStack ValPtr
 resolveIdentifierToPtr identifier@(Var identifierTxt) env = do
   case getVal identifier env of
     Nothing ->
@@ -140,7 +140,7 @@ mset id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
 mget :: MemAddress a -> Mem a -> Maybe a
 mget id = M.lookup id . getMappings
 
-computationAlloc :: Exp -> Scope -> EStack ComputationPtr
+computationAlloc :: Exp -> Scope -> EStack ValPtr
 computationAlloc exp scope = do
   St memC memE <- get
   let (newMemC, ptr) = malloc (Computation exp scope) memC
@@ -154,7 +154,7 @@ scopeAlloc env = do
   put $ St memC newMemE
   return scope
 
-computationWrite :: ComputationPtr -> Computation -> EStack ()
+computationWrite :: ValPtr -> Computation -> EStack ()
 computationWrite ptr cmp = do
   St memC memE <- get
   put $ St (mset ptr cmp memC) memE
@@ -164,7 +164,7 @@ scopeWrite scope env = do
   St memC memE <- get
   put $ St memC (mset scope env memE)
 
-computationDeref :: ComputationPtr -> EStack Computation
+computationDeref :: ValPtr -> EStack Computation
 computationDeref ptr = do
   memC <- gets getComputationMappings
   case mget ptr memC of
@@ -245,7 +245,7 @@ resolveIdentifier identifier = do
   cmpPtr <- resolveIdentifierToPtr identifier env
   runComputationAndSave cmpPtr
 
-runComputationAndSave :: ComputationPtr -> EStack Val
+runComputationAndSave :: ValPtr -> EStack Val
 runComputationAndSave ptr = do
   comp <- computationDeref ptr
   val <- runComputation comp
@@ -273,18 +273,22 @@ evalInCapturedScope scope bindings localEval = do
   localScope <- scopeAlloc localEnv
   local (const localScope) localEval
 
-addBindingToEnv :: Identifier -> Exp -> Env -> EStack Env
-addBindingToEnv id exp env = do
-  scp <- ask
-  ptr <- computationAlloc exp scp
-  return $ insertEnv id ptr env
-
 addBinding :: Identifier -> Exp -> EStack ()
 addBinding id exp = do
   scope <- ask
   env <- getEnvForCurrentScope
   newEnv <- addBindingToEnv id exp env
   scopeWrite scope newEnv
+
+addBindingToEnv :: Identifier -> Exp -> Env -> EStack Env
+addBindingToEnv id exp env = do
+  ptr <- expToValPtr exp
+  return $ insertEnv id ptr env
+
+expToValPtr :: Exp -> EStack ValPtr
+expToValPtr exp = do
+  scp <- ask
+  computationAlloc exp scp
 
 invokeThunk :: Val -> EStack Val
 invokeThunk (T body capturedScope) =
@@ -307,8 +311,8 @@ applyClosure v rand0 randRest =
       (C identifier body scope) ->
         evalInCapturedScope scope [(identifier, rand0)] $ evalM body
       (Internal _ f) -> do
-        localScope <- ask
-        f (rand0, localScope)
+        ptr <- expToValPtr rand0
+        f ptr
       _ ->
         throwError . EvalError $
           "Bad application\nA non-function was used like a function"
@@ -347,8 +351,8 @@ prepareDefaultBindings =
       defaultBindings :: [(T.Text, Val)]
       defaultBindings =
         constants
-          <> [(func, createUnary (T.unpack func) code) | (func, code) <- unaries]
-          <> [(func, createBinary (T.unpack func) code) | (func, code) <- binaries]
+          <> [(func, createUnary func code) | (func, code) <- unaries]
+          <> [(func, createBinary func code) | (func, code) <- binaries]
 
       (defaultEnv, memC) =
         foldr
@@ -362,18 +366,14 @@ prepareDefaultBindings =
       memE = fst $ malloc defaultEnv initMemE
    in (Addr . getCounter $ initMemE, memE, memC)
   where
+    createBinary :: T.Text -> (Val -> Val -> EStack Val) -> Val
     createBinary n binOp = Internal n $
-      \(e1, s1) -> return $
-        Internal n $
-          \(e2, s2) -> do
-            v1 <- local (const s1) $ evalM e1
-            v2 <- local (const s2) $ evalM e2
-            binOp v1 v2
+      \vPtr -> do
+        v <- runComputationAndSave vPtr
+        return . createUnary n $ binOp v
 
-    createUnary n unOp = Internal n $
-      \(e, s) -> do
-        v <- local (const s) $ evalM e
-        unOp v
+    createUnary :: T.Text -> (Val -> EStack Val) -> Val
+    createUnary n unOp = Internal n $ runComputationAndSave >=> unOp
 
     safePlus :: Val -> Val -> EStack Val
     safePlus (I n) (I m) = return . I $ n + m
