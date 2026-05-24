@@ -1,21 +1,17 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Pref
   ( codeToAst,
     codeToVal,
     prepareDefaultBindings,
-    eval,
-    evaluatePref,
     Env (..),
     Val (..),
-    Box (..),
-    PrefComputation (PrefE),
+    Computation (..),
   )
 where
 
 import Control.Monad
-import Control.Monad.Except -- For throwError
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.Map as M
@@ -23,127 +19,187 @@ import qualified Data.Text as T
 import Errors
 import Parser
 import Syntax.Exp
-import Text.Parsec hiding
-  ( Empty,
-    parse,
-  )
-import Prelude hiding
-  ( exp,
-    id,
-  )
+import Text.Parsec (ParseError, runParser)
+import Prelude hiding (exp, id)
 
 -- Type Setup
 -----------------------------------------------------------------
 
--- `v` represents what a variable is bound to.
--- This will help when we try to generalize the interpreter to
--- implement any evaluation strategy.
-data Env v = Env {getMap :: M.Map T.Text v} deriving (Eq, Show)
-
--- `d` represents the data that a memory address points to.
-data Mem d
-  = Mem
-      -- | mapping from memory-address to data
-      (M.Map Int d)
-      -- | memory-address counter
-      Int
-
--- `v` is the type level argument for environments/values
--- Box represents a computation in a lazy interpreter
-data Box v
-  = -- | a value that hasn't been computed yet,
-    Computation Exp (Env v)
-  | -- | a value that has been computed before
-    Computed (Val v)
-  deriving (Eq, Show)
-
--- Interpreter can see two kinds of computations
--- 1. An expression written in Pref
--- 2. A program written in haskell by the interpreter.
---    These programs are used to implement built-in functions
-data PrefComputation = PrefE Exp | InterpE (EStack MemVal)
-
--- `Eq` is implemented only for testing purposes
--- Since there's no point to testing two partial haskell
--- computations, all cases with `InterpE` are not equal
-instance Eq PrefComputation where
-  (PrefE exp1) == (PrefE exp2) = exp1 == exp2
-  _ == _ = False
-
--- `v` is the type level argument for the environment.
--- For Call-by value, this is simply `Val`
-data Val v
+data Val
   = S T.Text
   | I Int
   | B Bool
   | -- | Closure
-    -- Note that a closure doesn't contain an `Exp`
-    C T.Text PrefComputation (Env v)
+    C Identifier Exp Scope
   | -- | Thunk
-    T Exp (Env v)
-  | Cons (Val v) (Val v)
+    T Exp Scope
+  | -- | Internal code
+    Internal T.Text (ValPtr -> EStack Val)
+  | Cons Val Val
   | -- | Empty list
     E
-  deriving (Eq)
+  | -- | Void
+    V
 
-instance Show (Val d) where
+instance Show Val where
   show (S s) = T.unpack s
   show (I i) = show i
   show (B b) = show b
-  show (C s _ _) = "<lambda:" <> T.unpack s <> ">"
+  show (C (Var s) _ _) = "<lambda:" <> T.unpack s <> ">"
   show (T _ _) = "<thunk>"
+  show (Internal n _) = "<internal " <> T.unpack n <> ">"
   show ls@(Cons _ _) =
     "(list"
-      <> Prelude.foldr (\x y -> " " <> x <> y) ")" (contents ls)
+      <> foldr (\x y -> " " <> x <> y) ")" (contents ls)
     where
       contents (Cons a b) = show a : contents b
       contents E = []
       contents a = [show a]
   show E = "empty"
+  show V = "<void>"
 
--- Value with environment
-type MemAddress = Int
+newtype MemAddress d = Addr Int deriving (Eq, Show, Ord)
 
-type MemVal = Val MemAddress
+type Scope = MemAddress Env
+
+newtype Env = Env
+  { getMap :: M.Map Identifier ValPtr
+  }
+  deriving (Eq, Show)
+
+type ValPtr = MemAddress Computation
+
+-- For a strict interpreter, we never use the `Computation` constructor
+data Computation
+  = Computed Val
+  | -- | a value that hasn't been computed yet,
+    Computation Exp Scope
+  deriving (Show)
+
+data Mem d = Mem
+  { getMappings :: M.Map (MemAddress d) d,
+    getCounter :: Int
+  }
+  deriving (Show)
+
+data EvalState
+  = St
+  { getComputationMappings :: Mem Computation,
+    getEnvironmentMappings :: Mem Env
+  }
+  deriving (Show)
 
 -- interpreter's monad stack
 type EStack val =
-  StateT (Mem (Box Int)) (ReaderT (Env Int) (Either EvalError)) val
+  StateT EvalState (ReaderT Scope (Either EvalError)) val
+
+-- env utilities
+-----------------------------------------------------------------
+
+insertEnv :: Identifier -> ValPtr -> Env -> Env
+insertEnv k b = Env . M.insert k b . getMap
+
+getVal :: Identifier -> Env -> Maybe ValPtr
+getVal var = M.lookup var . getMap
+
+getEnvForCurrentScope :: EStack Env
+getEnvForCurrentScope = do
+  scope <- ask
+  scopeDeref scope
+
+resolveIdentifierToPtr :: Identifier -> Env -> EStack ValPtr
+resolveIdentifierToPtr identifier@(Var identifierTxt) env = do
+  case getVal identifier env of
+    Nothing ->
+      throwError
+        . EvalError
+        $ "Can not identify variable '"
+          <> identifierTxt
+          <> "'"
+    Just cmpPtr -> return cmpPtr
+
+-- state/memory utilities
+-----------------------------------------------------------------
+
+initMem :: Mem a
+initMem = Mem M.empty 0
+
+malloc :: a -> Mem a -> (Mem a, MemAddress a)
+malloc v m =
+  let i = getCounter m
+      address = Addr i
+      nextAddress = succ i
+      newMap = M.insert address v . getMappings $ m
+   in (Mem newMap nextAddress, address)
+
+mset :: MemAddress a -> a -> Mem a -> Mem a
+mset id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
+
+mget :: MemAddress a -> Mem a -> Maybe a
+mget id = M.lookup id . getMappings
+
+computationAlloc :: Exp -> Scope -> EStack ValPtr
+computationAlloc exp scope = do
+  St memC memE <- get
+  let (newMemC, ptr) = malloc (Computation exp scope) memC
+  put $ St newMemC memE
+  return ptr
+
+scopeAlloc :: Env -> EStack Scope
+scopeAlloc env = do
+  St memC memE <- get
+  let (newMemE, scope) = malloc env memE
+  put $ St memC newMemE
+  return scope
+
+computationWrite :: ValPtr -> Computation -> EStack ()
+computationWrite ptr cmp = do
+  St memC memE <- get
+  put $ St (mset ptr cmp memC) memE
+
+scopeWrite :: Scope -> Env -> EStack ()
+scopeWrite scope env = do
+  St memC memE <- get
+  put $ St memC (mset scope env memE)
+
+computationDeref :: ValPtr -> EStack Computation
+computationDeref ptr = do
+  memC <- gets getComputationMappings
+  case mget ptr memC of
+    Just cmp -> return cmp
+    Nothing ->
+      throwError . EvalError $ "<Internal Memory error when fetching computation>"
+
+scopeDeref :: Scope -> EStack Env
+scopeDeref scope = do
+  memE <- gets getEnvironmentMappings
+  case mget scope memE of
+    Just env -> return env
+    Nothing ->
+      throwError
+        . EvalError
+        $ "<Internal Memory error when fetching environment " <> (T.pack . show $ scope) <> ">"
 
 -- Interpreter
 --------------------------------------------------------------------
 
-eval :: Exp -> Env Int -> Mem (Box Int) -> Either EvalError MemVal
-eval e env mem = (`runReaderT` env) . (`evalStateT` mem) . evalM $ e
-
-evalM :: Exp -> EStack MemVal
-evalM Empty = return E -- EmptyList
+evalM :: Exp -> EStack Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
 evalM (BLiteral b) = return $ B b -- Bools
-evalM (Id identifier) = getMemoizedValue identifier
-evalM (Lambda [] body) = do
+evalM (Id identifier) = resolveIdentifier identifier
+evalM (Begin es) = snd <$> evalList es
+evalM (Lambda [] body) =
   -- Thunk case
-  env <- ask
-  return $ T body env
-evalM (Lambda (identifier : []) body) = do
+  asks $ T . Begin $ body
+evalM (Lambda [identifier] body) =
   -- Lambda base case
-  env <- ask
-  return $ C identifier (PrefE body) env
-evalM (Lambda (identifier : ids) body) = do
+  asks $ C identifier (Begin body)
+evalM (Lambda (identifier : ids) body) =
   -- Lambda currying case
-  let curriedLambda = Lambda [identifier] $ Lambda ids body
-  evalM curriedLambda
-evalM (Let bindings body) = do
-  -- Let case
-  env <- ask
-  updatedEnv <- foldM pushToEnv env bindings
-  local (const updatedEnv) $ evalM body
-  where
-    pushToEnv :: (Env Int) -> (T.Text, Exp) -> EStack (Env Int)
-    pushToEnv newEnv (identifier, exp) = do
-      memAdd <- memoize exp
-      return $ insertEnv identifier memAdd newEnv
+  evalM $ Lambda [identifier] [Lambda ids body]
+evalM (Let bindings body) =
+  evalInLocalScope bindings $ evalM (Begin body)
 evalM (If cond thn els) = do
   -- If case
   eCond <- evalM cond
@@ -153,292 +209,237 @@ evalM (If cond thn els) = do
 evalM (App rator []) = do
   -- Thunk application
   ratorVal <- evalM rator
-  case ratorVal of
-    (T body env) -> local (const env) $ evalM body
-    _ ->
-      throwError
-        . EvalError
-        $ "Bad application\nA thunk was applied to arguments"
+  invokeThunk ratorVal
 evalM (App rator (rand : rands)) = do
   -- Function application
   ratorVal <- evalM rator
   applyClosure ratorVal rand rands
-evalM (Def _ _) =
-  throwError
-    . EvalError
-    $ "A non-top level `defined` expression is not supported"
+evalM (Def i e) = do
+  addBinding i e
+  return V
+
+evalList :: [Exp] -> EStack ([Val], Val)
+evalList [] = return ([], V)
+evalList [e] = evalM e >>= \v -> return ([v], v)
+evalList (e : es) = do
+  v <- evalM e
+  (res, lastVal) <- evalList es
+  case v of
+    V -> return (res, lastVal)
+    _ -> return (v : res, lastVal)
+
+runEval :: Scope -> Mem Computation -> Mem Env -> EStack val -> Either EvalError val
+runEval scope memC memE = (`runReaderT` scope) . (`evalStateT` St memC memE)
 
 -- Utilities
 --------------------------------------------------------------------
 
-applyClosure :: MemVal -> Exp -> [Exp] -> EStack MemVal
-applyClosure (C identifier body env) rand remainingRands = do
-  memAddress <- memoize rand
-  let localEnv = insertEnv identifier memAddress env
-  -- Note: the variable below just tells us how to run the computation
-  --       to evaluate the closure's body. It doesn't actually run it
-  let evalBody = local (const localEnv) $ case body of
-        (PrefE exp) -> evalM exp
-        (InterpE comp) -> comp
-  case remainingRands of
-    [] -> evalBody -- no more arguments, so just return whatever body returns
-    (r : rs) -> do
-      -- body better return a closure. Apply it to rest of rands
-      clos <- evalBody
-      applyClosure clos r rs
-applyClosure _ _ _ =
+resolveIdentifier :: Identifier -> EStack Val
+resolveIdentifier identifier = do
+  env <- getEnvForCurrentScope
+  cmpPtr <- resolveIdentifierToPtr identifier env
+  runComputationAndSave cmpPtr
+
+runComputationAndSave :: ValPtr -> EStack Val
+runComputationAndSave ptr = do
+  comp <- computationDeref ptr
+  val <- runComputation comp
+  computationWrite ptr (Computed val)
+  return val
+
+runComputation :: Computation -> EStack Val
+runComputation cmp = case cmp of
+  Computed value -> return value
+  Computation exp cmpScpe -> local (const cmpScpe) $ evalM exp
+
+evalInLocalScope :: (Foldable t) => t (Identifier, Exp) -> EStack Val -> EStack Val
+evalInLocalScope bindings localEval = do
+  scope <- ask
+  evalInCapturedScope scope bindings localEval
+
+evalInCapturedScope :: (Foldable t) => Scope -> t (Identifier, Exp) -> EStack Val -> EStack Val
+evalInCapturedScope scope bindings localEval = do
+  env <- scopeDeref scope
+  localEnv <-
+    foldM
+      (\newEnv (id, exp) -> addBindingToEnv id exp newEnv)
+      env
+      bindings
+  localScope <- scopeAlloc localEnv
+  local (const localScope) localEval
+
+addBinding :: Identifier -> Exp -> EStack ()
+addBinding id exp = do
+  scope <- ask
+  env <- getEnvForCurrentScope
+  newEnv <- addBindingToEnv id exp env
+  scopeWrite scope newEnv
+
+addBindingToEnv :: Identifier -> Exp -> Env -> EStack Env
+addBindingToEnv id exp env = do
+  ptr <- expToValPtr exp
+  return $ insertEnv id ptr env
+
+expToValPtr :: Exp -> EStack ValPtr
+expToValPtr exp = do
+  scp <- ask
+  computationAlloc exp scp
+
+invokeThunk :: Val -> EStack Val
+invokeThunk (T body capturedScope) =
+  evalInCapturedScope capturedScope Nothing $ evalM body
+invokeThunk v =
   throwError
     . EvalError
-    $ "Bad application\nA non-function was used like a function"
-      <> "\nPerhaps a function was applied to too many arguments?"
+    $ "Bad application\nExpected thunk, got " <> (T.pack . show $ v)
 
--- Given a variable, if its value is already computed, simply return it,
--- Else, compute it, memoize it, and return it
-getMemoizedValue :: T.Text -> EStack MemVal
-getMemoizedValue identifier = do
-  memAddress <- resolveIdentifier identifier
-  box <- gets $ getMemMapping memAddress
-  case box of
-    Just (Computation exp oldEnv) -> do
-      -- memoize computed value
-      val <- local (const oldEnv) $ evalM exp
-      modify $ updateMem memAddress (Computed val)
-      return val
-    Just (Computed value) -> return value
-    Nothing -> throwError . EvalError $ "<Internal Memory error>" <> identifier
-
--- If given a variable, get's the memory address for the value it points to
--- Else, places the exp in the memory table and returns its memory address
--- This should be used whenever a *variable is bound to a value* to stay lazy
-memoize :: Exp -> EStack MemAddress
-memoize (Id var) = do
-  -- A bound variable, therefore it's a computation we have seen before.
-  -- be careful and make sure the computation isn't evaluated (to stay lazy)
-  memAddress <- resolveIdentifier var
-  return memAddress
-memoize exp = do
-  currEnv <- ask
-  (updatedMemTable, memAddress) <- gets $ insertMem (Computation exp currEnv)
-  put updatedMemTable
-  return memAddress
-
-resolveIdentifier :: T.Text -> EStack Int
-resolveIdentifier identifier = do
-  env <- ask
-  case getVal identifier env of
-    Just v -> return v
-    Nothing ->
-      throwError
-        . EvalError
-        $ "Can not identify variable '"
-          <> identifier
-          <> "'"
-
-insertEnv :: T.Text -> d -> Env d -> Env d
-insertEnv k b = Env . M.insert k b . getMap
-
-getVal :: T.Text -> Env v -> Maybe v
-getVal var = M.lookup var . getMap
-
--- Updates the memory map, and returns the added data's memory address
-insertMem :: a -> Mem a -> (Mem a, Int)
-insertMem v (Mem m i) =
-  let nextAddress = succ i
-      newMap = (M.insert i v m)
-   in (Mem newMap nextAddress, i)
-
-updateMem :: Int -> a -> Mem a -> Mem a
-updateMem id v (Mem m i) = Mem newMap i where newMap = M.adjust (const v) id m
-
-getMemMapping :: Int -> Mem a -> Maybe a
-getMemMapping id (Mem m _) = M.lookup id m
+applyClosure :: Val -> Exp -> [Exp] -> EStack Val
+applyClosure v rand0 randRest =
+  case randRest of
+    [] -> bodyEval
+    (rand1 : rands) -> do
+      closure <- bodyEval
+      applyClosure closure rand1 rands
+  where
+    bodyEval :: EStack Val
+    bodyEval = case v of
+      (C identifier body scope) ->
+        evalInCapturedScope scope [(identifier, rand0)] $ evalM body
+      (Internal _ f) -> do
+        ptr <- expToValPtr rand0
+        f ptr
+      _ ->
+        throwError . EvalError $
+          "Bad application\nA non-function was used like a function"
+            <> "\nPerhaps a function was applied to too many arguments?"
 
 -- Setup for usage
 -----------------------------------------------------------------
 
-prepareDefaultBindings :: (Env Int, Mem (Box Int))
+prepareDefaultBindings :: (Scope, Mem Env, Mem Computation)
 prepareDefaultBindings =
-  let defaultBindings =
-        [ ("+", createBinary safePlus),
-          ("-", createBinary safeMinus),
-          ("*", createBinary safeMult),
-          ("/", createBinary safeDiv),
-          ("string-append", createBinary safeAppend),
-          ("cons", createBinary safeCons),
-          ("and", createBinary safeAnd),
-          ("or", createBinary safeOr),
-          ("car", createUnary safeCar),
-          ("cdr", createUnary safeCdr),
-          ("zero?", createUnary zeroHuh),
-          ("empty?", createUnary emptyHuh),
-          ("fix", createUnary safeFix),
-          ("not", createUnary safeNot)
+  let constants :: [(T.Text, Val)]
+      constants = [("empty", E)]
+
+      unaries :: [(T.Text, Val -> EStack Val)]
+      unaries =
+        [ ("car", safeCar),
+          ("cdr", safeCdr),
+          ("zero?", zeroHuh),
+          ("empty?", emptyHuh),
+          ("fix", safeFix),
+          ("not", safeNot)
         ]
-      (defaultEnv, memoryTable) =
-        Prelude.foldr
-          ( \(func, val) (e, m) ->
-              let (newMem, newC) = insertMem (Computed val) m
-               in (insertEnv func newC e, newMem)
+
+      binaries :: [(T.Text, Val -> Val -> EStack Val)]
+      binaries =
+        [ ("+", safePlus),
+          ("-", safeMinus),
+          ("*", safeMult),
+          ("/", safeDiv),
+          ("string-append", safeAppend),
+          ("cons", safeCons),
+          ("and", safeAnd),
+          ("or", safeOr)
+        ]
+
+      defaultBindings :: [(T.Text, Val)]
+      defaultBindings =
+        constants
+          <> [(func, createUnary func code) | (func, code) <- unaries]
+          <> [(func, createBinary func code) | (func, code) <- binaries]
+
+      (defaultEnv, memC) =
+        foldr
+          ( \(builtin, val) (e, m) ->
+              let (newMem, ptr) = malloc (Computed val) m
+               in (insertEnv (Var builtin) ptr e, newMem)
           )
-          (Env M.empty, Mem M.empty 0)
+          (Env M.empty, initMem)
           defaultBindings
-      updateMemTable (Mem table counter) =
-        Mem
-          ( M.map
-              ( \case
-                  (Computed (C v b _)) -> Computed $ C v b defaultEnv
-                  v -> v
-              )
-              table
-          )
-          counter
-   in (defaultEnv, updateMemTable memoryTable)
+      initMemE = initMem
+      memE = fst $ malloc defaultEnv initMemE
+   in (Addr . getCounter $ initMemE, memE, memC)
   where
-    createBuiltIn :: Int -> (EStack MemVal) -> MemVal
-    createBuiltIn m comp = compute m (Env M.empty)
-      where
-        compute 1 = C "1" (InterpE comp)
-        compute n =
-          C
-            identifier
-            ( InterpE $ do
-                env <- ask
-                return . compute (pred n) $ env
-            )
-          where
-            identifier = (T.pack . show $ n)
+    createBinary :: T.Text -> (Val -> Val -> EStack Val) -> Val
+    createBinary n binOp = Internal n $
+      \vPtr -> do
+        v <- runComputationAndSave vPtr
+        return . createUnary n $ binOp v
 
-    createBinary binOp = createBuiltIn 2 $ do
-      v1 <- getMemoizedValue "2"
-      v2 <- getMemoizedValue "1"
-      binOp v1 v2
+    createUnary :: T.Text -> (Val -> EStack Val) -> Val
+    createUnary n unOp = Internal n $ runComputationAndSave >=> unOp
 
-    createUnary unOp = createBuiltIn 1 $ do
-      v1 <- getMemoizedValue "1"
-      unOp v1
-
-    safePlus :: MemVal -> MemVal -> EStack MemVal
+    safePlus :: Val -> Val -> EStack Val
     safePlus (I n) (I m) = return . I $ n + m
     safePlus _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeMinus :: MemVal -> MemVal -> EStack MemVal
+    safeMinus :: Val -> Val -> EStack Val
     safeMinus (I n) (I m) = return . I $ n - m
     safeMinus _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeMult :: MemVal -> MemVal -> EStack MemVal
+    safeMult :: Val -> Val -> EStack Val
     safeMult (I n) (I m) = return . I $ n * m
-    safeMult _ _ = throwError . EvalError $ "Expected two numbers"
+    safeMult a b = throwError . EvalError $ "Expected two numbers, got " <> (T.pack . show $ a) <> " and " <> (T.pack . show $ b)
 
-    safeDiv :: MemVal -> MemVal -> EStack MemVal
+    safeDiv :: Val -> Val -> EStack Val
     safeDiv (I n) (I m) = return . I $ n `div` m
     safeDiv _ _ = throwError . EvalError $ "Expected two numbers"
 
-    safeAppend :: MemVal -> MemVal -> EStack MemVal
+    safeAppend :: Val -> Val -> EStack Val
     safeAppend (S a) (S b) = return . S $ a <> b
     safeAppend _ _ = throwError . EvalError $ "Expected two strings"
 
-    safeCons :: MemVal -> MemVal -> EStack MemVal
+    safeCons :: Val -> Val -> EStack Val
     safeCons a b = return $ Cons a b
 
-    safeAnd :: MemVal -> MemVal -> EStack MemVal
+    safeAnd :: Val -> Val -> EStack Val
     safeAnd a@(B False) _ = return a
     safeAnd _ b = return b
 
-    safeOr :: MemVal -> MemVal -> EStack MemVal
+    safeOr :: Val -> Val -> EStack Val
     safeOr (B False) b = return b
     safeOr a _ = return a
 
-    safeCar :: MemVal -> EStack MemVal
+    safeCar :: Val -> EStack Val
     safeCar (Cons a _) = return a
     safeCar _ = throwError . EvalError $ "Expected a list"
 
-    safeCdr :: MemVal -> EStack MemVal
+    safeCdr :: Val -> EStack Val
     safeCdr (Cons _ b) = return b
     safeCdr _ = throwError . EvalError $ "Expected a list"
 
-    zeroHuh :: MemVal -> EStack MemVal
+    zeroHuh :: Val -> EStack Val
     zeroHuh (I 0) = return $ B True
     zeroHuh _ = return $ B False
 
-    emptyHuh :: MemVal -> EStack MemVal
+    emptyHuh :: Val -> EStack Val
     emptyHuh E = return $ B True
     emptyHuh _ = return $ B False
 
-    safeFix :: MemVal -> EStack MemVal
-    safeFix (C identifier (PrefE b) env) = do
-      -- we do the following to allow circular mapping:
-      -- \* store closure's body at memory address `M`
-      -- \* bind closure's identifier to `M`
-      -- \* update computation at `M` to use environment that maps
-      --   `identifier` to `M` (itself)
-      -- \* evaluate body with the "fixed" environment mentioned above
-      (uMem, memId) <- gets $ insertMem (Computation b env)
-      put uMem
-      let fixedEnv = insertEnv identifier memId env
-      modify $ updateMem memId (Computation b fixedEnv)
-      local (const fixedEnv) $ evalM b
+    -- TODO: Consider fix for thunks
+    safeFix :: Val -> EStack Val
+    safeFix (C identifier b scope) = do
+      evalInCapturedScope scope [(identifier, b)] $ do
+        localScope <- ask
+        localEnv <- getEnvForCurrentScope
+        bPtr <- resolveIdentifierToPtr identifier localEnv
+        computationWrite bPtr (Computation b localScope)
+        resolveIdentifier identifier
     safeFix _ = throwError . EvalError $ "fix expects a non-zero arity function"
 
-    safeNot :: MemVal -> EStack MemVal
+    safeNot :: Val -> EStack Val
     safeNot (B False) = return $ B True
     safeNot _ = return $ B False
-
--- TODO: Memory can be updated by top-level expressions in cbr
-evalList ::
-  [Exp] ->
-  [(T.Text, Exp)] ->
-  Env Int ->
-  Mem (Box Int) ->
-  Either EvalError [MemVal]
-evalList [] _ _ _ = return []
-evalList (Def id binding : es) futureBindings env mem =
-  let newFutures = drop 1 futureBindings
-      fixedBinding = topLevelFunction id newFutures binding
-      (uMem, memId) = insertMem (Computation fixedBinding env) mem
-      val = memId
-   in evalList es newFutures (insertEnv id val env) uMem
-  where
-    topLevelFunction :: T.Text -> [(T.Text, Exp)] -> Exp -> Exp
-    topLevelFunction expId fb (Lambda [] body) =
-      App
-        ( App
-            (Id "fix")
-            [ Lambda [expId, "_"] -- Todo: Should be a non-colliding variable
-                . Lambda []
-                $ foldr
-                  (Let . return)
-                  (Let [(expId, App (Id expId) [Id "_"])] body)
-                $ futureFunctions fb
-            ]
-        )
-        $ [NLiteral 0]
-    topLevelFunction expId fb (Lambda ps body) =
-      App
-        (Id "fix")
-        [Lambda (expId : ps) $ foldr (Let . return) body $ futureFunctions fb]
-    topLevelFunction _ _ b = b
-
-    futureFunctions :: [(T.Text, Exp)] -> [(T.Text, Exp)]
-    futureFunctions fs = (`evalState` fs) $ forM fs $ \(name, func) -> do
-      modify $ drop 1
-      currFutureBindings <- get
-      return (name, topLevelFunction name currFutureBindings func)
-evalList (exp : es) fb env mem =
-  (:) <$> eval exp env mem <*> evalList es fb env mem
 
 codeToAst :: T.Text -> Either ParseError [Exp]
 codeToAst code = either throwError return $ runParser parse () "" code
 
-codeToVal :: T.Text -> Either EvalError (Either ParseError [MemVal])
+codeToVal :: T.Text -> Either ParseError (Either EvalError [Val])
 codeToVal code = case codeToAst code of
-  Left e -> return . Left $ e
-  Right ast -> case evalList ast (futureBindings ast) defaultEnv defaultMem of
-    Left e -> Left e
-    Right vals -> return . Right $ vals
+  Left e -> Left e
+  Right ast -> case runEval scope defaultMem memE $ evalList ast of
+    Left e -> return . Left $ e
+    Right (vals, _) -> return . Right $ vals
   where
-    futureBindings ast = [(i, b) | (Def i b) <- ast]
-    (defaultEnv, defaultMem) = prepareDefaultBindings
-
-evaluatePref :: T.Text -> T.Text
-evaluatePref =
-  either (T.pack . show) (either (T.pack . show) (T.pack . show)) . codeToVal
+    (scope, memE, defaultMem) = prepareDefaultBindings

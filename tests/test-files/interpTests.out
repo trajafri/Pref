@@ -1,0 +1,15 @@
+1
+"a"
+2
+3
+5
+3
+2
+"HelloWorld"
+"Hello World"
+5
+120
+8
+42
+(cons 42 empty)
+(cons 1 (cons 2 (cons 3 empty)))

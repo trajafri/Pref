@@ -1,0 +1,10 @@
+(define ones
+  (lambda () (cons 1 (lambda () (ones)))))
+(define take-inf
+  (lambda (n l)
+    (if (zero? n) empty (cons (car l) (take-inf (- n 1) ((cdr l)))))))
+(define sum
+  (lambda (l)
+    (if (empty? l) 0 (+ (car l) (sum (cdr l))))))
+
+(sum (take-inf 100 (ones)))

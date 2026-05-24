@@ -40,14 +40,16 @@ cps (defineFree, fp) = do
             <> ["\n"]
   putStr $ definitions <> cpsedFile
   where
-    defineFreeVar :: (T.Text, Int) -> Exp
-    defineFreeVar (var, arity) =
-      let vars = map (T.pack . ("var" <>) . show) [1 .. arity]
-       in Def (var <> "k") $
-            Lambda (vars <> ["k"]) $
-              App
-                (Id "k")
-                [App (Id var) $ map Id vars]
+    defineFreeVar :: (Identifier, Int) -> Exp
+    defineFreeVar (Var var, arity) =
+      let vars = map (Var . T.pack . ("var" <>) . show) [1 .. arity]
+       in Def (Var $ var <> "k") $
+            Lambda
+              (vars <> [Var "k"])
+              [ App
+                  (Id . Var $ "k")
+                  [App (Id . Var $ var) $ map Id vars]
+              ]
 
 main :: IO ()
 main = execParser opts >>= cps

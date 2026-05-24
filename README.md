@@ -31,19 +31,19 @@ where *path* points to a file containing a Pref program
 
 ## Syntax/Grammar
 
-* d ::= `(define x e)` 
-* e ::= x  
-     | (e e ...)  
-     | (lambda (x ...) e)  
-     | (let ([x e] ...) e)  
-     | (if e e e)  
-     | *empty*  
+* e ::= x
+     | (define x e)
+     | (let ([x e] ...) e ...)
+     | (if e e e)
+     | (begin e ...)
+     | (lambda (x ...) e ...)
+     | (e ...)
      | c
-     | B
+     | BuiltIn
 * x ::= *variable*
-* c ::= integer | string | b
-* b ::= #t | #f
-* B ::= + | - | * | / | cons | car | cdr | empty? | zero? | string-append | fix | and | or | not
+* c ::= integer | string | bool
+* bool ::= #t | #f
+* BuiltIn ::= + | - | * | / | cons | car | cdr | empty? | zero? | string-append | fix | and | or | not
 
 You can also use braces or brackets instead of parenthesis where needed.
 
@@ -72,13 +72,9 @@ Pref comes with the following built-in data types:
 
 ## `define`
 
-The `define` grammar can be used to define top-level constants and functions.
+The `define` grammar can be used to define constants and functions.
 
-For top-level functions, `define` is used as follows:
-
-```(define f (lambda (x ...) e))```
-
-Currently, `define` can only be used at the top level.
+Unlike the `let` form, functions defined via `define` can be mutually recursive.
 
 ---
 
@@ -86,8 +82,7 @@ Currently, `define` can only be used at the top level.
 
 * Allow user to choose an evaluation strategy by passing in certain flags.
 * Data Types: Allow user to define their own data type and (maybe) using pattern matching to work with the data.
-* Refactor: Pref had a rough start which is why `define` can only be used at the top-level. This should be allowed where  
-            a user expects to use `let`. 
+* Lazy lists. Even in a lazy interpreter, `cons` currentlty force evaluates its arguments.
 * Error Locations: Both parser and the interpreter should indicate the location where the error occured.
 * Compiler: compile Pref to x86.
 * Infix Grammar: Try to use the same interpreter on an infix version of Pref (I guess it will be called *Infi* if that happens).

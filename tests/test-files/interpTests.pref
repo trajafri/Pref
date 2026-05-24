@@ -1,0 +1,17 @@
+1
+"a"
+((lambda (x) 2) 3)
+((lambda (x) x) 3)
+((lambda (x y z) z) 3 4 5)
+(let ((x 1) (y 2) (z 3)) z)
+((lambda () 2))
+(string-append "Hello" "World")
+(string-append "Hello" (string-append " " "World"))
+(begin (define five 5) five)
+(fix (lambda (fact x) (if (zero? x) 1 (* x (fact (- x 1))))) 
+      5)
+(fix (lambda (fib last curr n) (if (zero? (- n 2)) curr (fib curr (+ last curr) (- n 1))))
+      1 1 6)
+(car (cons (+ 30 12) empty))
+(cdr (cons 2 (cons (+ 30 12) empty)))
+(cons 1 (cons 2 (cons 3 empty)))
