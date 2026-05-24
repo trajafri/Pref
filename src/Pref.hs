@@ -4,8 +4,6 @@ module Pref
   ( codeToAst,
     codeToVal,
     prepareDefaultBindings,
-    eval,
-    evaluatePref,
     Env (..),
     Val (..),
     Computation (..),
@@ -185,12 +183,6 @@ scopeDeref scope = do
 -- Interpreter
 --------------------------------------------------------------------
 
-runEval :: Scope -> Mem Computation -> Mem Env -> EStack val -> Either EvalError val
-runEval scope memC memE = (`runReaderT` scope) . (`evalStateT` St memC memE)
-
-eval :: Exp -> Scope -> Mem Computation -> Mem Env -> Either EvalError Val
-eval e envscope memC memE = runEval envscope memC memE . evalM $ e
-
 evalM :: Exp -> EStack Val
 evalM (SLiteral s) = return $ S s -- Strings
 evalM (NLiteral i) = return $ I i -- Numbers
@@ -235,6 +227,9 @@ evalList (e : es) = do
   case v of
     V -> return (res, lastVal)
     _ -> return (v : res, lastVal)
+
+runEval :: Scope -> Mem Computation -> Mem Env -> EStack val -> Either EvalError val
+runEval scope memC memE = (`runReaderT` scope) . (`evalStateT` St memC memE)
 
 -- Utilities
 --------------------------------------------------------------------
@@ -448,7 +443,3 @@ codeToVal code = case codeToAst code of
     Right (vals, _) -> return . Right $ vals
   where
     (scope, memE, defaultMem) = prepareDefaultBindings
-
-evaluatePref :: T.Text -> T.Text
-evaluatePref =
-  either (T.pack . show) (either (T.pack . show) (T.pack . show)) . codeToVal
