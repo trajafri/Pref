@@ -1,0 +1,17 @@
+(define fib 
+  (lambda (n)
+    (if (zero? n)
+        1
+        (if (zero? (- n 1)) 1 (+ (fib (- n 1)) (fib (- n 2)))))))
+
+(define partial+ (+ (fib 24)))
+
+(define power 
+  (lambda (v n)
+   (if (zero? n) 1 (* v (power v (- n 1))))))
+
+; running the following multiple times
+; with laziness, fib should be computed once
+(begin 
+  (power (+ (partial+ 0) 0) 50)
+  (partial+ 0))
